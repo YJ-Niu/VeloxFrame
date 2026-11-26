@@ -1,6 +1,6 @@
-"""rspandas: pandas-like library built on Rust.
+"""rsdata: DataFrame-like library built on Rust.
 
-A drop-in pandas-like API where the heavy lifting is done in Rust.
+A drop-in DataFrame-like API where the heavy lifting is done in Rust.
 """
 
 # ============================================================================
@@ -65,8 +65,8 @@ from .io import (
     to_xml,
 )
 from .lazyframe import LazyFrame, lazy, col, lit
-from .rspandas import _DataFrame, _Series  # 重新导出 Rust 类型，供内部使用
-from .rspandas import factorize as _factorize  # Rust 端 factorize
+from .rsdata import _DataFrame, _Series  # 重新导出 Rust 类型，供内部使用
+from .rsdata import factorize as _factorize  # Rust 端 factorize
 from .series import Series
 from typing import Any, Dict
 
@@ -147,7 +147,7 @@ def factorize(values):
     """对值进行编码，返回 (codes, categories)。
 
     Examples:
-        >>> import rspandas as rpd
+        >>> import rsdata as rpd
         >>> codes, cats = rpd.factorize(['a', 'b', 'a', 'c', 'b'])
         >>> list(codes)
         [0, 1, 0, 2, 1]
@@ -227,7 +227,7 @@ def to_numeric(arg, errors: str = "raise", downcast=None):
 
     result = [_convert_one(v) for v in values]
 
-    # downcast 逻辑（对齐 pandas）
+    # downcast 逻辑（对齐 主流库）
     # 'integer'/'signed' -> int8/int16/int32/int64 中能容纳所有值的最小 dtype
     # 'unsigned' -> uint8/uint16/uint32/uint64
     # 'float' -> float32（如果所有值都在 float32 范围内）
@@ -273,9 +273,9 @@ def to_numeric(arg, errors: str = "raise", downcast=None):
             # 如果所有值都能用 float32 表示，则 downcast 为 float32
             downcast_dtype = "float32"
 
-    # 对 list/tuple 输入返回 ndarray（对齐 pandas 行为）
+    # 对 list/tuple 输入返回 ndarray（对齐 主流库 行为）
     if isinstance(arg, (list, tuple)):
-        import rsnumpy as _rnp
+        import rsarray as _rnp
 
         arr = _rnp.asarray(result)
         # 应用 downcast dtype
@@ -386,8 +386,8 @@ def isnull(obj):
     elif isinstance(obj, list):
         return [v is None or (isinstance(v, float) and v != v) for v in obj]
     elif hasattr(obj, "tolist") and hasattr(obj, "dtype"):
-        # rsnumpy.ndarray: 逐元素检测 NaN
-        import rsnumpy as _rnp
+        # rsarray.ndarray: 逐元素检测 NaN
+        import rsarray as _rnp
 
         vals = obj.tolist() if hasattr(obj, "tolist") else list(obj)
         mask = [v is None or (isinstance(v, float) and v != v) for v in vals]
@@ -405,8 +405,8 @@ def notnull(obj):
     elif isinstance(obj, list):
         return [v is not None and not (isinstance(v, float) and v != v) for v in obj]
     elif hasattr(obj, "tolist") and hasattr(obj, "dtype"):
-        # rsnumpy.ndarray: 逐元素检测非缺失
-        import rsnumpy as _rnp
+        # rsarray.ndarray: 逐元素检测非缺失
+        import rsarray as _rnp
 
         vals = obj.tolist() if hasattr(obj, "tolist") else list(obj)
         mask = [v is not None and not (isinstance(v, float) and v != v) for v in vals]
@@ -538,7 +538,7 @@ __all__ = [
 
 
 # ============================================================================
-# rsnumpy 函数包装 - 让 rnp.exp(Series) 返回 Series 而非 ndarray
+# rsarray 函数包装 - 让 rnp.exp(Series) 返回 Series 而非 ndarray
 # ============================================================================
 
 
@@ -852,8 +852,8 @@ def lreshape(
 
 
 def array(data, dtype=None, copy: bool = True):
-    """创建数组（转发到 rsnumpy）。"""
-    import rsnumpy as rnp
+    """创建数组（转发到 rsarray）。"""
+    import rsarray as rnp
 
     return rnp.array(data, dtype=dtype, copy=copy)
 
@@ -864,11 +864,11 @@ def array(data, dtype=None, copy: bool = True):
 
 
 def test():
-    """运行 rspandas 内置测试（占位符）。"""
+    """运行 rsdata 内置测试（占位符）。"""
     import warnings
 
     warnings.warn(
-        "rspandas.test() is a placeholder. Use pytest debug/ for tests.",
+        "rsdata.test() is a placeholder. Use pytest debug/ for tests.",
         UserWarning,
         stacklevel=2,
     )

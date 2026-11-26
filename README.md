@@ -1,25 +1,25 @@
 <p align="center">
-  <h1 align="center">rspandas</h1>
+  <h1 align="center">rsdata</h1>
   <p align="center">
-    <strong>pandas-compatible API, Rust-powered performance</strong>
+    <strong>DataFrame-compatible API, Rust-powered performance</strong>
   </p>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/pypi/v/rspandas?label=PyPI" alt="PyPI">
-  <img src="https://img.shields.io/pypi/pyversions/rspandas" alt="Python">
+  <img src="https://img.shields.io/pypi/v/rsdata?label=PyPI" alt="PyPI">
+  <img src="https://img.shields.io/pypi/pyversions/rsdata" alt="Python">
   <img src="https://img.shields.io/badge/Rust-2024%20edition-orange" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
 </p>
 
 ---
 
-**rspandas** is a high-performance pandas-compatible data analysis library powered by Rust. Write the same pandas code you know—filtering, grouping, window functions, reshaping—but get near-native performance thanks to columnar storage, vectorized operations, and multi-threaded parallelism via [Rayon](https://github.com/rayon-rs/rayon).
+**rsdata** is a high-performance DataFrame-compatible data analysis library powered by Rust. Write the same DataFrame code you know—filtering, grouping, window functions, reshaping—but get near-native performance thanks to columnar storage, vectorized operations, and multi-threaded parallelism via [Rayon](https://github.com/rayon-rs/rayon).
 
-Built on [rsnumpy](https://pypi.org/project/rsnumpy/) for zero-copy ndarray operations.
+Built on [rsarray](https://pypi.org/project/rsarray/) for zero-copy ndarray operations.
 
 ```python
-import rspandas as rpd
+import rsdata as rpd
 
 df = rpd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
 print(df.describe())
@@ -28,20 +28,20 @@ print(df.groupby("a").sum())
 
 ## Highlights
 
-- **95%+ pandas API coverage** — Series, DataFrame, GroupBy, Rolling/Expanding/EWM, Resampler, reshaping, time series
+- **95%+ DataFrame API coverage** — Series, DataFrame, GroupBy, Rolling/Expanding/EWM, Resampler, reshaping, time series
 - **Rust 2024 core** — columnar storage, vectorized computation, Rayon parallel iterators, LTO optimized
 - **Multi-platform wheels** — pre-built binaries for Linux (x86_64 / arm64), macOS (Intel / Apple Silicon), Windows (x64 / x86)
-- **Minimal dependencies** — requires only `rsnumpy` at runtime (no NumPy/PyArrow required)
+- **Minimal dependencies** — requires only `rsarray` at runtime (no PyArrow required)
 - **Rich I/O** — CSV, Excel (native Rust via calamine + rust_xlsxwriter), JSON, Parquet, SQL, Pickle, Feather
 - **Full type system** — int64, float64, bool, string, category, datetime, timedelta, period
-- **Comprehensive testing** — 950+ tests validating pandas compatibility
+- **Comprehensive testing** — 950+ tests validating DataFrame compatibility
 
 ## Installation
 
 Requires **Python >= 3.9**.
 
 ```bash
-pip install rspandas
+pip install rsdata
 ```
 
 Or build from source:
@@ -49,7 +49,7 @@ Or build from source:
 ```bash
 pip install maturin
 maturin build --release
-pip install target/wheels/rspandas-*.whl
+pip install target/wheels/rsdata-*.whl
 ```
 
 ## Quick Start
@@ -57,7 +57,7 @@ pip install target/wheels/rspandas-*.whl
 ### Series
 
 ```python
-import rspandas as rpd
+import rsdata as rpd
 
 s = rpd.Series([1, 2, 3, 4, 5], name="values")
 s.head(3)           # first 3 rows
@@ -180,11 +180,11 @@ df.pivot(index="x", columns="y", values="v")
 ### Interop
 
 ```python
-# pandas
+# 主流库
 df.to_pandas()
 rpd.DataFrame.from_pandas(pdf)
 
-# numpy
+# rsarray
 s.to_numpy()
 rpd.Series.from_numpy(arr)
 
@@ -205,7 +205,7 @@ rpd.crosstab(df["a"], df["b"])
 
 ## Performance
 
-rspandas leverages multi-threaded parallelism via [Rayon](https://github.com/rayon-rs/rayon) across all heavy operations:
+rsdata leverages multi-threaded parallelism via [Rayon](https://github.com/rayon-rs/rayon) across all heavy operations:
 
 | Operation         | Parallelized methods                                                     |
 | ----------------- | ------------------------------------------------------------------------ |
@@ -221,16 +221,16 @@ The Rust core uses columnar `Vec<Option<T>>` storage with `opt-level=3` and `lto
 
 ```
 User Code (Python)
-    │  import rspandas as rpd
+    │  import rsdata as rpd
     ▼
 ┌──────────────────────────────────────┐
-│  python/rspandas/                    │  ← Python API layer
-│  series.py / dataframe.py / ...      │     (pandas-compatible signatures)
+│  python/rsdata/                    │  ← Python API layer
+│  series.py / dataframe.py / ...      │     (DataFrame-compatible signatures)
 └────────────────┬─────────────────────┘
                  │  PyO3 FFI
                  ▼
 ┌──────────────────────────────────────┐
-│  rspandas._rust  (compiled .so/.dylib)│  ← Native module
+│  rsdata._rust  (compiled .so/.dylib)│  ← Native module
 ├──────────────────────────────────────┤
 │  PySeries / PyDataFrame  (#[pyclass])│
 ├──────────────────────────────────────┤

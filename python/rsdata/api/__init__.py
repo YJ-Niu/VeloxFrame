@@ -1,1 +1,1 @@
-"""rspandas.api - 公共 API 类型检查函数。"""
+"""rsdata.api - 公共 API 类型检查函数。"""

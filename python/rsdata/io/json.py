@@ -37,8 +37,8 @@ def read_json(
     -------
     DataFrame
     """
-    from ..rspandas import _DataFrame
-    from ..rspandas import read_json as _read_json_rust
+    from ..rsdata import _DataFrame
+    from ..rsdata import read_json as _read_json_rust
 
     headers, series_list = _read_json_rust(path, orient, lines, encoding)
     return DataFrame._from_inner(_DataFrame(headers, series_list))
@@ -69,7 +69,7 @@ def to_json(
     orient : str, default 'records'
         JSON 格式方向。
     date_format : str, default 'iso'
-        日期格式（当前仅支持 'iso'，与 pandas 兼容）。
+        日期格式（当前仅支持 'iso'，与 主流库 兼容）。
     double_precision : int, default 10
         浮点数精度（兼容签名，当前忽略）。
     force_ascii : bool, default True
@@ -91,7 +91,7 @@ def to_json(
     -------
     str or None
     """
-    from ..rspandas import write_json as _write_json_rust
+    from ..rsdata import write_json as _write_json_rust
 
     # 默认 orient
     if orient is None:

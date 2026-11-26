@@ -1,6 +1,6 @@
 """Series 内部辅助函数与工具类
 
-由 rspandas/series.py 拆分而来。
+由 rsdata/series.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -8,8 +8,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Optional, Union
 
-from ..rspandas import _DataFrame as _PyDataFrame  # type: ignore
-from ..rspandas import _Series as _PySeries  # type: ignore
+from ..rsdata import _DataFrame as _PyDataFrame  # type: ignore
+from ..rsdata import _Series as _PySeries  # type: ignore
 
 if TYPE_CHECKING:
     from ..series import Series  # noqa: F401  # 类型注解使用
@@ -26,7 +26,7 @@ def _is_missing(v) -> bool:
 
 
 class _AlignmentResult(tuple):
-    """align() 返回结果，在 repr 中逗号后自动换行，与 pandas 格式一致。"""
+    """align() 返回结果，在 repr 中逗号后自动换行，与 主流库 格式一致。"""
 
     def __repr__(self) -> str:
         if len(self) != 2:
@@ -42,9 +42,9 @@ class _AlignmentResult(tuple):
 
 
 class _DtypeScalar:
-    """带 dtype 属性的标量包装，模拟 numpy 标量的行为。
+    """带 dtype 属性的标量包装，模拟 rsarray 标量的行为。
 
-    允许标量值通过 .dtype 访问类型信息，如 pandas 的 np.float64(1.0).dtype。
+    允许标量值通过 .dtype 访问类型信息，如 主流库 的 np.float64(1.0).dtype。
     """
 
     def __init__(self, value, dtype: str = "float64"):
@@ -122,22 +122,22 @@ class _DtypeScalar:
 
 
 def _dtype_to_str(dtype) -> str:
-    """将 dtype 参数（str/type 对象/numpy dtype 对象）规范化为字符串。
+    """将 dtype 参数（str/type 对象/rsarray dtype 对象）规范化为字符串。
 
     - str 直接返回
     - Python type（如 bool/int/float/str）取 __name__
-    - numpy dtype 对象（如 np.uint8, np.float32）取对应的字符串
+    - rsarray dtype 对象（如 np.uint8, np.float32）取对应的字符串
     """
     if isinstance(dtype, str):
         return dtype
-    # numpy dtype 对象（如 np.float32, np.uint8）有 __name__ 属性
+    # rsarray dtype 对象（如 np.float32, np.uint8）有 __name__ 属性
     if hasattr(dtype, "__name__"):
         name = dtype.__name__.lower()
         # np.bool_ -> bool
         if name == "bool_":
             return "bool"
         return name
-    # numpy dtype 实例（如 dtype('float32')）
+    # rsarray dtype 实例（如 dtype('float32')）
     if hasattr(dtype, "name"):
         return str(dtype.name).lower()
     return str(dtype).lower()
@@ -180,7 +180,7 @@ def _is_safe_astype(src_dtype: str, target: str) -> bool:
 
 
 def _infer_dtype(values: list) -> str:
-    """根据数据推断 dtype（对齐 pandas 的行为）。"""
+    """根据数据推断 dtype（对齐 主流库 的行为）。"""
     if not values:
         return "object"
 
@@ -235,7 +235,7 @@ def _infer_dtype(values: list) -> str:
 
 
 def _format_timedelta(td: timedelta) -> str:
-    """将 timedelta 格式化为字符串显示（与 pandas 一致）。
+    """将 timedelta 格式化为字符串显示（与 主流库 一致）。
 
     格式: "N days HH:MM:SS" (天数>0) 或 "HH:MM:SS" (天数为0)
     """
@@ -354,26 +354,26 @@ def _PySeries_filter(inner: _PySeries, mask: list) -> _PySeries:
 
 
 # ---------------------------------------------------------------------------
-# 扩展数组类 (对齐 pandas NumpyExtensionArray 显示)
+# 扩展数组类 (对齐 主流库 ExtensionArray 显示)
 # ---------------------------------------------------------------------------
 
 
 class _ExtensionArray:
-    """包装 rsnumpy ndarray，提供与 pandas ExtensionArray 相同的显示格式。"""
+    """包装 rsarray ndarray，提供与 主流库 ExtensionArray 相同的显示格式。"""
 
     def __init__(self, data, dtype_str=None):
         self._data = data
         self._dtype = dtype_str or "float64"
 
     def __repr__(self) -> str:
-        import rsnumpy as rnp
+        import rsarray as rnp
 
         arr = rnp.array(self._data)
         # 如果是二维数组 (1, n)，squeeze 成一维
         if arr.ndim > 1:
             arr = arr.squeeze()
-        # 使用 rsnumpy 的 array2string，用逗号分隔，匹配 pandas 格式
-        # pandas 使用 float64 的完整精度（约 16 位），所以指定 precision=16
+        # 使用 rsarray 的 array2string，用逗号分隔，匹配 主流库 格式
+        # 主流库 使用 float64 的完整精度（约 16 位），所以指定 precision=16
         values_str = rnp.array2string(
             arr, separator=", ", prefix=" ", suffix="", precision=16
         )
@@ -383,7 +383,7 @@ class _ExtensionArray:
         else:
             values_with_brackets = f"[{values_str}]"
         return (
-            f"<NumpyExtensionArray>\n"
+            f"<ExtensionArray>\n"
             f"{values_with_brackets}\n"
             f"Length: {len(arr)}, dtype: {self._dtype}"
         )
@@ -395,7 +395,7 @@ class _ExtensionArray:
         return self._data[idx]
 
     def __array__(self, dtype=None):
-        import rsnumpy as rnp
+        import rsarray as rnp
 
         return rnp.array(self._data, dtype=dtype)
 

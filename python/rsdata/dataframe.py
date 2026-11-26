@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import rsnumpy as rnp
+import rsarray as rnp
 
 # ============================================================================
 # 重新导出辅助类（向后兼容）
@@ -24,9 +24,9 @@ from ._internal._dataframe_helpers import (
     _normalize_dtype,
     _to_pylist_columns,
 )
-from rspandas.rspandas import _DataFrame as _PyDataFrame  # type: ignore
-from rspandas.rspandas import _Series as _PySeries
-from rspandas.rspandas import (
+from rsdata.rsdata import _DataFrame as _PyDataFrame  # type: ignore
+from rsdata.rsdata import _Series as _PySeries
+from rsdata.rsdata import (
     read_csv_path,
     read_csv_string,
 )
@@ -184,7 +184,7 @@ class DataFrame:
                     # str 标量广播：标记为 str（避免被 Rust 层推断为 object）
                     col_dtype_overrides[str(k)] = "str"
                 elif _is_ndarray(v) and hasattr(v, "dtype"):
-                    # rsnumpy ndarray: 保留数值子类型信息
+                    # rsarray ndarray: 保留数值子类型信息
                     nd_dt = str(v.dtype)
                     if nd_dt in (
                         "uint8",
@@ -1365,7 +1365,7 @@ class DataFrame:
     def _filter_with_dataframe_mask(self, mask_df: "DataFrame") -> "DataFrame":
         """使用 DataFrame 作为布尔掩码过滤。True 保留值，False 置为 NaN。
 
-        pandas 行为：int 列中引入 NaN 时，整列 upcast 为 float64；
+        主流库 行为：int 列中引入 NaN 时，整列 upcast 为 float64；
         若无 NaN 引入则保留原 dtype（如 int32）。
         """
         new_data = {}
@@ -1446,7 +1446,7 @@ class DataFrame:
                     del self._col_categories[key]
             else:
                 # 保留 Series 的 dtype 信息（如 float32/int8 等子类型）
-                # pandas 行为：df['A'] = df['A'].astype('float32') 后 dtype 为 float32
+                # 主流库 行为：df['A'] = df['A'].astype('float32') 后 dtype 为 float32
                 if key in self._col_categories:
                     del self._col_categories[key]
                 # 检查 Series 的 _dtype_str 是否有子类型信息
@@ -1474,7 +1474,7 @@ class DataFrame:
             if len(values) < self._nrows:
                 values = values + [None] * (self._nrows - len(values))
         elif _is_ndarray(value):
-            # rsnumpy ndarray: 转换为列表
+            # rsarray ndarray: 转换为列表
             values = list(value)
             if len(values) < self._nrows:
                 values = values + [None] * (self._nrows - len(values))
@@ -1571,7 +1571,7 @@ class DataFrame:
     def _setitem_with_col_list(self, keys: list, value) -> None:
         """按列名列表批量赋值（df[['a', 'b']] = other_df 或标量）。
 
-        pandas 行为：按位置（而非列名）将 value 的列分配到 keys。
+        主流库 行为：按位置（而非列名）将 value 的列分配到 keys。
         - 若 value 是 DataFrame，按位置取其列值
         - 若 value 是 Series，广播到所有 keys
         - 若 value 是 list，要求长度与 keys 相同（每列一个值列表）或与 nrows 相同（广播）
@@ -2586,9 +2586,9 @@ class DataFrame:
             col = self._inner.get_column(c)
             values = list(col.values)
             if raw:
-                # 转为 rsnumpy ndarray
+                # 转为 rsarray ndarray
                 try:
-                    import rsnumpy as rnp
+                    import rsarray as rnp
 
                     return rnp.array(values)
                 except ImportError:
@@ -2602,7 +2602,7 @@ class DataFrame:
             values = [col_cache_for_rows[c][i] for c in self._columns]
             if raw:
                 try:
-                    import rsnumpy as rnp
+                    import rsarray as rnp
 
                     return rnp.array(values)
                 except ImportError:
@@ -2783,7 +2783,7 @@ class DataFrame:
         return DataFrame(new_data, index=self._index)
 
     def map(self, func, na_action: Optional[str] = None) -> "DataFrame":
-        """applymap 的别名 (pandas 2.1+ 推荐)。
+        """applymap 的别名 (主流库 2.1+ 推荐)。
 
         :param func: 元素级函数
         :param na_action: 'ignore' 跳过 NA, None 对 NA 也调用函数
@@ -2855,7 +2855,7 @@ class DataFrame:
     def nlargest(self, n: int = 5, columns=None, keep: str = "first") -> "DataFrame":
         """返回按 columns 排序后最大的 N 行。
 
-        等价于 ``pandas.DataFrame.nlargest``。单列时调用 Rust 层 ``arg_top_n``
+        等价于 ``DataFrame.nlargest``。单列时调用 Rust 层 ``arg_top_n``
         以获得 O(n log n) 性能；多列时回退到 Python 稳定排序。
 
         :param n: 返回的行数
@@ -2867,7 +2867,7 @@ class DataFrame:
     def nsmallest(self, n: int = 5, columns=None, keep: str = "first") -> "DataFrame":
         """返回按 columns 排序后最小的 N 行。
 
-        等价于 ``pandas.DataFrame.nsmallest``。单列时调用 Rust 层 ``arg_top_n``
+        等价于 ``DataFrame.nsmallest``。单列时调用 Rust 层 ``arg_top_n``
         以获得 O(n log n) 性能；多列时回退到 Python 稳定排序。
 
         :param n: 返回的行数
@@ -2890,7 +2890,7 @@ class DataFrame:
         if n < 0:
             raise ValueError("n must be non-negative")
 
-        # 单列：直接走 Rust 层 arg_top_n（None/NaN 一律跳过，与 pandas 一致）
+        # 单列：直接走 Rust 层 arg_top_n（None/NaN 一律跳过，与 主流库 一致）
         if len(columns) == 1:
             col = columns[0]
             idx_list = list(self._inner.get_column(col).arg_top_n(n, keep, largest))
@@ -2900,7 +2900,7 @@ class DataFrame:
             return DataFrame(new_data, index=new_index)
 
         # 多列：Python 稳定排序。从最后一列向前依次稳定排序，
-        # 保证前面的列优先级更高。None 始终排最后（pandas 默认 na_position='last'）。
+        # 保证前面的列优先级更高。None 始终排最后（主流库 默认 na_position='last'）。
         col_cache = self._cache_columns(columns)
         order = list(range(self._nrows))
 
@@ -3886,11 +3886,11 @@ class DataFrame:
 
     @property
     def _array(self):
-        """返回底层 rsnumpy ndarray 的核心数组，使 rsnumpy ufunc 能直接处理 DataFrame。"""
+        """返回底层 rsarray ndarray 的核心数组，使 rsarray ufunc 能直接处理 DataFrame。"""
         return self.to_numpy()._array
 
     def to_numpy(self, dtype=None):
-        """转换为 rsnumpy 二维数组。
+        """转换为 rsarray 二维数组。
 
         :param dtype: 目标 dtype
         """
@@ -3902,11 +3902,11 @@ class DataFrame:
 
     @classmethod
     def from_numpy(cls, arr, columns=None, index=None, dtype=None) -> "DataFrame":
-        """从 rsnumpy 二维数组构造 DataFrame。
+        """从 rsarray 二维数组构造 DataFrame。
 
         Parameters
         ----------
-        arr : rsnumpy.ndarray
+        arr : rsarray.ndarray
             二维输入数组。
         columns : list[str], optional
             列名。
@@ -3920,7 +3920,7 @@ class DataFrame:
         DataFrame
         """
         if not isinstance(arr, rnp.ndarray):
-            raise TypeError(f"expected rsnumpy.ndarray, got {type(arr).__name__}")
+            raise TypeError(f"expected rsarray.ndarray, got {type(arr).__name__}")
         if arr.ndim == 1:
             arr = arr.reshape(-1, 1)
         data = arr.tolist()
@@ -3946,7 +3946,7 @@ class DataFrame:
             raise ImportError("pyarrow is required for to_arrow()")
         from io import BytesIO
 
-        from .rspandas import to_arrow_ipc_bytes as _to_ipc_bytes
+        from .rsdata import to_arrow_ipc_bytes as _to_ipc_bytes
 
         cols = list(self._columns)
         series_list = [self._inner.get_column(c) for c in cols]
@@ -3978,7 +3978,7 @@ class DataFrame:
             raise ImportError("pyarrow is required for from_arrow()")
         from io import BytesIO
 
-        from .rspandas import from_arrow_ipc_bytes as _from_ipc_bytes
+        from .rsdata import from_arrow_ipc_bytes as _from_ipc_bytes
 
         if not isinstance(table, pa.Table):
             raise TypeError("expected pyarrow.Table")
@@ -4437,7 +4437,7 @@ class DataFrame:
 
         # 处理索引列
         if index and self._index:
-            from .rspandas import _Series as _PySeries
+            from .rsdata import _Series as _PySeries
 
             idx_series = _PySeries(self._index, index_label if index_label else "")
             columns_to_write = [index_label if index_label else ""] + selected_columns
@@ -4478,8 +4478,8 @@ class DataFrame:
                     break
         if _rust_ok:
             import os
-            from .rspandas import write_csv_path as _wc_path
-            from .rspandas import write_csv_string as _wc_str
+            from .rsdata import write_csv_path as _wc_path
+            from .rsdata import write_csv_string as _wc_str
 
             _include_header = bool(header)
             _cols = [str(c) for c in columns_to_write]
@@ -4527,12 +4527,12 @@ class DataFrame:
 
         if lineterminator is not None:
             content = lineterminator.join(content_lines)
-            # 与 rspandas 行为一致：每行（含最后一行）以行终止符结尾
+            # 与 rsdata 行为一致：每行（含最后一行）以行终止符结尾
             if content and not content.endswith(lineterminator):
                 content += lineterminator
         else:
             content = "\n".join(content_lines)
-            # 与 rspandas 行为一致：每行（含最后一行）以换行符结尾
+            # 与 rsdata 行为一致：每行（含最后一行）以换行符结尾
             if content and not content.endswith("\n"):
                 content += "\n"
 
@@ -4581,7 +4581,7 @@ class DataFrame:
                 with bz2.open(path, mode + "t", encoding=encoding, errors=errors) as f:
                     f.write(content)
             else:
-                from .rspandas import write_string_to_file as _write_string_to_file
+                from .rsdata import write_string_to_file as _write_string_to_file
 
                 _write_string_to_file(path, content)
         else:
@@ -4733,7 +4733,7 @@ class DataFrame:
                 # 重建 _inner（不含该列）
                 remaining_cols = list(df._columns)
                 remaining_series = [df._inner.get_column(c) for c in remaining_cols]
-                from .rspandas import _DataFrame as _PyDataFrame
+                from .rsdata import _DataFrame as _PyDataFrame
 
                 df._inner = _PyDataFrame(remaining_cols, remaining_series)
                 df._nrows = len(idx_values)
@@ -4974,7 +4974,7 @@ class DataFrame:
     def info(self) -> None:
         nrows = self._nrows
         ncols = len(self._columns)
-        print("<class 'rspandas.DataFrame'>")
+        print("<class 'rsdata.DataFrame'>")
         print(f"RangeIndex: {nrows} entries, 0 to {nrows - 1}")
         print(f"Data columns (total {ncols} columns):")
         col_width = 15
@@ -5588,7 +5588,7 @@ class DataFrame:
                     and v.microsecond == 0
                 ):
                     return v.strftime("%Y-%m-%d")
-                # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+                # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
                 return v.isoformat().replace("T", " ", 1)
             return str(v)
 
@@ -6753,11 +6753,11 @@ class DataFrame:
     def select_dtypes(self, include=None, exclude=None) -> "DataFrame":
         """根据 dtype 选择列。
 
-        :param include: 要包含的类型 (str / list[str] / type / numpy dtype)
-        :param exclude: 要排除的类型 (str / list[str] / type / numpy dtype)
+        :param include: 要包含的类型 (str / list[str] / type / rsarray dtype)
+        :param exclude: 要排除的类型 (str / list[str] / type / rsarray dtype)
         :return: DataFrame
 
-        支持的 dtype 类别（基于 NumPy dtype 层级）：
+        支持的 dtype 类别（基于 rsarray dtype 层级）：
 
         - 精确类型: int8/int16/int32/int64, uint8/uint16/uint32/uint64,
           float16/float32/float64, bool, str, object, category,
@@ -6767,12 +6767,12 @@ class DataFrame:
           timedelta/timedelta64
         - Python 类型: bool, int, float, str, complex
 
-        注意: pandas 3.0+ 字符串列使用 str dtype（非 object）。
+        注意: 主流库 3.0+ 字符串列使用 str dtype（非 object）。
         """
         if include is None and exclude is None:
             raise ValueError("at least one of include or exclude must be non-None")
 
-        # NumPy dtype 层级中的类型集合
+        # rsarray dtype 层级中的类型集合
         _SIGNED_INT = {"int8", "int16", "int32", "int64", "longlong"}
         _UNSIGNED_INT = {"uint8", "uint16", "uint32", "uint64", "ulonglong"}
         _INTEGER = _SIGNED_INT | _UNSIGNED_INT
@@ -6799,7 +6799,7 @@ class DataFrame:
                 # Python 内建类型
                 if c in _PY_TYPE_MAP:
                     return _PY_TYPE_MAP[c]
-                # numpy 类型对象（如 np.uint8, np.float32, np.number）
+                # rsarray 类型对象（如 np.uint8, np.float32, np.number）
                 if hasattr(c, "__name__"):
                     name = c.__name__.lower()
                     # np.bool_ -> bool
@@ -6807,7 +6807,7 @@ class DataFrame:
                         return "bool"
                     return name
                 return str(c).lower()
-            # numpy dtype 实例（如 dtype('float32')）
+            # rsarray dtype 实例（如 dtype('float32')）
             if hasattr(c, "name"):
                 return str(c.name).lower()
             return str(c).lower()
@@ -6920,7 +6920,7 @@ class DataFrame:
                     and v.microsecond == 0
                 ):
                     return v.strftime("%Y-%m-%d")
-                # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+                # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
                 return v.isoformat().replace("T", " ", 1)
             return str(v)
 
@@ -8181,7 +8181,7 @@ class DataFrame:
     def astype(self, dtype, copy: bool = True, errors: str = "raise") -> "DataFrame":
         """转换每列的数据类型。
 
-        :param dtype: 目标类型 (str/type 对象/numpy dtype/字典 {列名: 类型})
+        :param dtype: 目标类型 (str/type 对象/rsarray dtype/字典 {列名: 类型})
         :param copy: 是否复制数据 (默认 True)
         :param errors: 错误处理 ('raise' 或 'ignore')
         """
@@ -9078,7 +9078,7 @@ class DataFrame:
         if not isinstance(other, DataFrame):
             raise TypeError("combine requires DataFrame inputs")
 
-        import rsnumpy as rnp
+        import rsarray as rnp
 
         def _is_missing(v) -> bool:
             if v is None:
@@ -9107,12 +9107,12 @@ class DataFrame:
         all_cols = list(dict.fromkeys(list(self._columns) + list(other._columns)))
 
         def _to_array(values):
-            """将值列表转为 rsnumpy 数组，None → nan。"""
+            """将值列表转为 rsarray 数组，None → nan。"""
             float_vals = [float("nan") if _is_missing(v) else float(v) for v in values]
             return rnp.array(float_vals)
 
         def _from_array(arr):
-            """将 rsnumpy 数组转回值列表，nan → None。"""
+            """将 rsarray 数组转回值列表，nan → None。"""
             vals = arr.tolist() if hasattr(arr, "tolist") else list(arr)
             return [None if _is_missing(v) else v for v in vals]
 
@@ -9354,7 +9354,7 @@ class DataFrame:
         verify_integrity: bool = False,
         sort: bool = False,
     ) -> "DataFrame":
-        """追加行（pandas 已废弃，仍保留）。
+        """追加行（主流库 已废弃，仍保留）。
 
         :param other: DataFrame 或 dict 列表
         :param ignore_index: 是否重置索引
@@ -9521,7 +9521,7 @@ class DataFrame:
         raise NotImplementedError("DataFrame.sparse not supported")
 
     # ====================================================================
-    # 扩展功能：数据质量 / 清洗 / 高级统计（pandas 之外的增强）
+    # 扩展功能：数据质量 / 清洗 / 高级统计（主流库 之外的增强）
     # ====================================================================
 
     def profile(self) -> "DataFrame":
@@ -9953,7 +9953,7 @@ class DataFrame:
         :return: LazyFrame 实例
 
         Examples:
-            >>> from rspandas import col
+            >>> from rsdata import col
             >>> result = df.lazy().filter(col('x') > 0).select(['x', 'y']).collect()
         """
         from .lazyframe import LazyFrame

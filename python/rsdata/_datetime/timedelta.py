@@ -1,6 +1,6 @@
 """时间差：to_timedelta / timedelta_range
 
-由 rspandas/_datetime.py 拆分而来。
+由 rsdata/_datetime.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def to_timedelta(arg, unit=None, errors: str = "raise"):
         for v in arg.values:
             try:
                 td = to_timedelta(v, unit, errors)
-                # 将 timedelta 转换为 pandas 兼容的字符串格式
+                # 将 timedelta 转换为 主流库 兼容的字符串格式
                 out.append(_convert_to_basic(td) if td is not None else None)
             except (ValueError, TypeError):
                 if errors == "coerce":
@@ -65,12 +65,12 @@ def to_timedelta(arg, unit=None, errors: str = "raise"):
             return _parse_timedelta_str(arg)
         except (ValueError, TypeError):
             if errors == "coerce":
-                # pandas: errors='coerce' 时无法解析的元素变为 NaT（用 None 表示）
+                # 主流库: errors='coerce' 时无法解析的元素变为 NaT（用 None 表示）
                 return None
             if errors == "ignore":
                 return arg
             raise
-    # rspandas.Timedelta 对象
+    # rsdata.Timedelta 对象
     if hasattr(arg, "_td") and isinstance(getattr(arg, "_td", None), timedelta):
         return arg._td
     if isinstance(arg, (list, tuple)):

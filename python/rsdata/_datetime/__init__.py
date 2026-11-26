@@ -6,7 +6,7 @@
 - :mod:`.timedelta`: to_timedelta / timedelta_range
 - :mod:`.period`: period_range
 
-向后兼容：``from rspandas._datetime import to_datetime`` 仍可用。
+向后兼容：``from rsdata._datetime import to_datetime`` 仍可用。
 """
 
 from __future__ import annotations

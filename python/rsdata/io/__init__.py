@@ -11,7 +11,7 @@
 - :mod:`.web`：HTML / Clipboard / XML
 - :mod:`.other`：ORC / Stata / HDF / SPSS / GBQ
 
-向后兼容：``from rspandas.io import read_csv`` 仍可用。
+向后兼容：``from rsdata.io import read_csv`` 仍可用。
 """
 
 from __future__ import annotations

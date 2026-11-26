@@ -1,4 +1,4 @@
-"""Series: pandas-like 1D data structure with Rust backend."""
+"""Series: DataFrame-like 1D data structure with Rust backend."""
 
 from __future__ import annotations
 
@@ -21,10 +21,10 @@ from ._internal._series_helpers import (  # noqa: F401
 )
 
 
-import rsnumpy as rnp
+import rsarray as rnp
 
-from .rspandas import _DataFrame as _PyDataFrame
-from .rspandas import _Series as _PySeries  # type: ignore
+from .rsdata import _DataFrame as _PyDataFrame
+from .rsdata import _Series as _PySeries  # type: ignore
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Tuple
 
@@ -51,7 +51,7 @@ from .window.rolling import Rolling  # noqa: F401
 
 
 class Series:
-    """一维带标签数组，对齐 pandas API。
+    """一维带标签数组，对齐 DataFrame API。
 
     Examples:
         >>> s = Series([1, 2, 3], name='a')
@@ -231,11 +231,11 @@ class Series:
                 "uint32",
                 "uint64",
             ):
-                # 保留显式指定的数值子类型（对齐 pandas 行为）
+                # 保留显式指定的数值子类型（对齐 主流库 行为）
                 # Rust 层仅支持 int64/float64，但 Python 层 _dtype_str 追踪精确子类型
                 self._dtype_str = nd
             elif nd.startswith("period["):
-                # 保留 period[freq] 格式（与 pandas 一致）
+                # 保留 period[freq] 格式（与 主流库 一致）
                 self._dtype_str = dtype_str
             elif nd.startswith("datetime64"):
                 # datetime64[us] / datetime64[ns] 等
@@ -253,7 +253,7 @@ class Series:
                 if inferred == "str":
                     self._dtype_str = "str"
 
-        # 若存在 datetime 缓存，dtype 应为 datetime64[us]（与 pandas 一致）
+        # 若存在 datetime 缓存，dtype 应为 datetime64[us]（与 主流库 一致）
         # 但 period 类型优先使用 period[freq] dtype
         if self._dt_values and self._period_freq is None:
             tz = getattr(self, "_dt_tz", None)
@@ -263,7 +263,7 @@ class Series:
             else:
                 self._dtype_str = "datetime64[us]"
 
-        # 若存在 timedelta 缓存，dtype 应为 timedelta64[us]（与 pandas 一致）
+        # 若存在 timedelta 缓存，dtype 应为 timedelta64[us]（与 主流库 一致）
         if self._td_values and self._period_freq is None and not self._dt_values:
             self._dtype_str = "timedelta64[us]"
 
@@ -378,13 +378,13 @@ class Series:
 
     @property
     def _array(self):
-        """返回底层 _core.ndarray，供 rsnumpy 统计函数直接使用。
+        """返回底层 _core.ndarray，供 rsarray 统计函数直接使用。
 
-        通过暴露 _array 属性，rsnumpy 的 _ensure_raw() 可直接获取
+        通过暴露 _array 属性，rsarray 的 _ensure_raw() 可直接获取
         原始 Rust ndarray 而无需通过 _core.ndarray() 构造，
         避免 TypeError: Unsupported data type。
         """
-        import rsnumpy.num_core as _core
+        import rsarray.num_core as _core
 
         vals = list(self._inner.values)
         # 将 None 替换为 NaN，避免 _core.ndarray 因 None 值报错
@@ -533,7 +533,7 @@ class Series:
     def __setitem__(self, key, value):
         """按标签或位置赋值。"""
         if isinstance(key, slice):
-            # 切片赋值: 按位置 (与 pandas 整数切片一致)
+            # 切片赋值: 按位置 (与 主流库 整数切片一致)
             start, stop, step = key.indices(len(self))
             indices = list(range(start, stop, step))
             if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
@@ -799,7 +799,7 @@ class Series:
 
         :param reverse: 为 True 时交换操作数顺序（用于反向运算符 __rsub__ 等）
         :param fill_value: 当"至多一个"操作数缺失 (None/NaN) 时用此值替换缺失方
-            后再做运算；两个操作数均缺失时结果仍为 NaN (与 pandas 行为一致)。
+            后再做运算；两个操作数均缺失时结果仍为 NaN (与 主流库 行为一致)。
         """
 
         def _is_missing(v) -> bool:
@@ -872,7 +872,7 @@ class Series:
                 if idx not in seen:
                     seen.add(idx)
                     union_index.append(idx)
-            # 排序并集以匹配 pandas 行为
+            # 排序并集以匹配 主流库 行为
             try:
                 union_index = sorted(union_index)
             except TypeError:
@@ -996,7 +996,7 @@ class Series:
     def __divmod__(self, other):
         """divmod 运算: self divmod other
 
-        支持 other 为标量、list、Series 或 rsnumpy.ndarray，按位置对齐做元素级 divmod。
+        支持 other 为标量、list、Series 或 rsarray.ndarray，按位置对齐做元素级 divmod。
         """
         self_vals = list(self.values)
         # 解析 other 为值列表或标量
@@ -1045,7 +1045,7 @@ class Series:
     def __rdivmod__(self, other):
         """反向 divmod 运算: other divmod self
 
-        支持 other 为标量、list、Series 或 rsnumpy.ndarray，按位置对齐做元素级 divmod。
+        支持 other 为标量、list、Series 或 rsarray.ndarray，按位置对齐做元素级 divmod。
         """
         self_vals = list(self.values)
         if isinstance(other, Series):
@@ -1092,7 +1092,7 @@ class Series:
     def _bitwise_series(self, result, force_int: bool = False) -> "_PySeries":
         """根据位运算结果构造 Series，自动推断 dtype。
 
-        与 pandas 行为对齐：
+        与 主流库 行为对齐：
         - bool & bool -> bool
         - int & int -> int64
         - bool & int -> int64（Python 中 True & 1 = 1）
@@ -1130,7 +1130,7 @@ class Series:
     def __and__(self, other):
         """按位与: self & other
 
-        保留操作数原始类型（bool/int），与 pandas 行为一致。
+        保留操作数原始类型（bool/int），与 主流库 行为一致。
         """
         if isinstance(other, Series):
             other_vals = other.values
@@ -1155,7 +1155,7 @@ class Series:
     def __or__(self, other):
         """按位或: self | other
 
-        保留操作数原始类型（bool/int），与 pandas 行为一致。
+        保留操作数原始类型（bool/int），与 主流库 行为一致。
         """
         if isinstance(other, Series):
             other_vals = other.values
@@ -1180,7 +1180,7 @@ class Series:
     def __xor__(self, other):
         """按位异或: self ^ other
 
-        保留操作数原始类型（bool/int），与 pandas 行为一致。
+        保留操作数原始类型（bool/int），与 主流库 行为一致。
         """
         if isinstance(other, Series):
             other_vals = other.values
@@ -1205,7 +1205,7 @@ class Series:
     def __lshift__(self, other):
         """左移: self << other
 
-        移位运算结果恒为 int64（与 pandas 一致：bool << 1 -> int64）。
+        移位运算结果恒为 int64（与 主流库 一致：bool << 1 -> int64）。
         """
         if isinstance(other, Series):
             other_vals = other.values
@@ -1246,7 +1246,7 @@ class Series:
     def __rshift__(self, other):
         """右移: self >> other
 
-        移位运算结果恒为 int64（与 pandas 一致）。
+        移位运算结果恒为 int64（与 主流库 一致）。
         """
         if isinstance(other, Series):
             other_vals = other.values
@@ -1298,10 +1298,10 @@ class Series:
         return Series(result, name=self.name, dtype=self._dtype_str)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        """支持 rsnumpy 通用函数 (ufunc) 作用于 Series。
+        """支持 rsarray 通用函数 (ufunc) 作用于 Series。
 
         当 rnp.exp(series) / rnp.remainder(s1, s2) 等调用时，
-        rsnumpy 会调用此方法，返回 Series 而非 list。
+        rsarray 会调用此方法，返回 Series 而非 list。
         """
         if method != "__call__":
             return NotImplemented
@@ -1378,7 +1378,7 @@ class Series:
     def __array__(self, dtype=None):
         """支持 rnp.array(series) 转换。"""
         values = self.values
-        # 将 None 替换为 float('nan')，避免 rsnumpy 因混合类型报错
+        # 将 None 替换为 float('nan')，避免 rsarray 因混合类型报错
         if any(v is None for v in values):
             values = [float("nan") if v is None else v for v in values]
         return rnp.array(values, dtype=dtype)
@@ -1567,17 +1567,17 @@ class Series:
         return DataFrame({col_name: list(self.values)}, index=self._index)
 
     def to_numpy(self, dtype=None, copy: bool = True, na_value: Any = None):
-        """转换为 rsnumpy array（对齐 pandas Series.to_numpy）。
+        """转换为 rsarray array（对齐 主流库 Series.to_numpy）。
 
         当 Series 内部有 datetime 缓存（源自 DatetimeSeries 或 datetime 列表），
         支持 `dtype=object`（返回 datetime 对象数组）和
         `dtype='datetime64[ns]'`（返回 int64 纳秒纪元数组）。
 
         :param dtype: 目标 dtype ('object' / 'datetime64[ns]' / None 等)
-        :param copy: 是否拷贝 (保留参数对齐 pandas，本实现始终返回新数组)
+        :param copy: 是否拷贝 (保留参数对齐 主流库，本实现始终返回新数组)
         :param na_value: 替换 None 的值 (仅在 dtype=object / datetime64[ns] 场景生效)
         """
-        import rsnumpy as rnp
+        import rsarray as rnp
 
         has_dt_cache = self._dt_values is not None and len(self._dt_values) > 0
         if dtype is None:
@@ -1602,7 +1602,7 @@ class Series:
             if na_value is not None:
                 vals = [na_value if v is None else v for v in vals]
             if dtype_is_object:
-                # rsnumpy 不支持 datetime 对象，退回 ISO 字符串 (object dtype)
+                # rsarray 不支持 datetime 对象，退回 ISO 字符串 (object dtype)
                 from ._datetime import _to_iso
 
                 iso_strs = [
@@ -1644,7 +1644,7 @@ class Series:
             return rnp.array(nano_vals)
 
         # 普通路径
-        # rsnumpy 不支持 None 与数值混合，将 None 转为 nan (float 数组)
+        # rsarray 不支持 None 与数值混合，将 None 转为 nan (float 数组)
         vals = list(self.values)
         if any(v is None for v in vals):
             non_none = [v for v in vals if v is not None]
@@ -1660,14 +1660,14 @@ class Series:
 
     @classmethod
     def from_numpy(cls, arr, name=None, index=None) -> "Series":
-        """从 rsnumpy array 构造 Series。
+        """从 rsarray array 构造 Series。
 
-        :param arr: rsnumpy.ndarray 输入数组
+        :param arr: rsarray.ndarray 输入数组
         :param name: Series 名称
         :param index: 索引
         """
         if not isinstance(arr, rnp.ndarray):
-            raise TypeError(f"expected rsnumpy.ndarray, got {type(arr).__name__}")
+            raise TypeError(f"expected rsarray.ndarray, got {type(arr).__name__}")
         vals = arr.tolist()
         return cls(vals, name=name, index=index)
 
@@ -1844,7 +1844,7 @@ class Series:
 
         n = len(self.values)
 
-        # 使用 Python 实现（保留原始索引标签，对齐 pandas 行为；
+        # 使用 Python 实现（保留原始索引标签，对齐 主流库 行为；
         # Rust 层 sort_values 会重排索引，无法保留原始索引标签，故不使用）
         values = list(self.values)
 
@@ -2005,7 +2005,7 @@ class Series:
                 out = [v if _is_missing(v) else arg(v) for v in self.values]
             else:
                 # na_action=None: 对所有值调用 func (包括 None/NaN)
-                # None 转为 float('nan') 以匹配 pandas 行为 (str(nan)="nan")
+                # None 转为 float('nan') 以匹配 主流库 行为 (str(nan)="nan")
                 out = [arg(float("nan") if v is None else v) for v in self.values]
         return Series(out, name=self.name, index=self._index)
 
@@ -2160,7 +2160,7 @@ class Series:
     def astype(self, dtype, copy: bool = True, errors: str = "raise") -> _PySeries:
         """类型转换。
 
-        :param dtype: 目标类型 (str/type 对象/numpy dtype 对象)
+        :param dtype: 目标类型 (str/type 对象/rsarray dtype 对象)
         :param copy: 是否复制数据 (默认 True)
         :param errors: 错误处理 ('raise' 或 'ignore')
         """
@@ -2362,7 +2362,7 @@ class Series:
     def nlargest(self, n: int = 5, keep: str = "first") -> _PySeries:
         """返回最大的 N 个元素。
 
-        等价于 ``pandas.Series.nlargest``，使用 Rust 稳定排序实现，
+        等价于 ``Series.nlargest``，使用 Rust 稳定排序实现，
         None/NaN 一律跳过。
 
         :param n: 返回的元素数量
@@ -2385,7 +2385,7 @@ class Series:
     def nsmallest(self, n: int = 5, keep: str = "first") -> _PySeries:
         """返回最小的 N 个元素。
 
-        等价于 ``pandas.Series.nsmallest``，使用 Rust 稳定排序实现，
+        等价于 ``Series.nsmallest``，使用 Rust 稳定排序实现，
         None/NaN 一律跳过。
 
         :param n: 返回的元素数量
@@ -2481,7 +2481,7 @@ class Series:
             return tolerance
 
         if isinstance(tolerance, str):
-            # 解析 pandas 风格的时间字符串
+            # 解析 主流库 风格的时间字符串
             parts = tolerance.strip().split()
             if len(parts) == 1:
                 # 无空格格式: "1day", "2h", "30min"
@@ -3000,10 +3000,10 @@ class Series:
 
         :param other: 另一个 Series
         :param join: 连接方式 ('outer'/'left'/'right'/'inner')
-        :param axis: 保留参数（Series 仅为 0），与 pandas 签名对齐
+        :param axis: 保留参数（Series 仅为 0），与 主流库 签名对齐
         :param level: 多级索引级别（未实现，仅占位）
         :param copy: 是否复制数据（未实现，仅占位）
-        :param fill_value: 缺失值填充（填充所有 NaN，与 pandas 行为一致）
+        :param fill_value: 缺失值填充（填充所有 NaN，与 主流库 行为一致）
         :param method: 填充方法（未实现，仅占位）
         :return: (aligned_self, aligned_other) 两个重新索引后的 Series
         """
@@ -3018,7 +3018,7 @@ class Series:
         )
 
         # 根据 join 计算新索引
-        # pandas 行为：outer/inner 返回 sorted 顺序，left/right 保持原顺序
+        # 主流库 行为：outer/inner 返回 sorted 顺序，left/right 保持原顺序
         if join == "outer":
             new_index = sorted(set(self_index) | set(other_index))
         elif join == "inner":
@@ -3033,7 +3033,7 @@ class Series:
         self_aligned = self.reindex(index=new_index)
         other_aligned = other.reindex(index=new_index)
 
-        # fill_value 填充所有 NaN（包括原有与新增的），与 pandas 行为一致
+        # fill_value 填充所有 NaN（包括原有与新增的），与 主流库 行为一致
         if fill_value is not None:
             self_aligned = self_aligned.fillna(fill_value)
             other_aligned = other_aligned.fillna(fill_value)
@@ -3404,7 +3404,7 @@ class Series:
             # 非数值型: count/unique/top/freq
             counter = Counter(non_null)
             if counter:
-                # most_common(1) 返回频次最高且首次出现的值 (与 pandas 一致)
+                # most_common(1) 返回频次最高且首次出现的值 (与 主流库 一致)
                 top, freq = counter.most_common(1)[0]
             else:
                 top, freq = None, 0
@@ -3653,7 +3653,7 @@ class Series:
         :param normalize: 是否返回比例而非计数 (默认 False)
         :param sort: 是否按计数排序 (默认 True)
         :param ascending: 是否升序排序 (默认 False，即降序)
-        :param bins: 暂不支持，pandas 用于数值分箱
+        :param bins: 暂不支持，主流库 用于数值分箱
         :param dropna: 是否忽略 None 值 (默认 True)
         """
         # 加速：如果该 Series 是 apply(type) 的结果，已缓存类型计数（无需再做一次哈希遍历）
@@ -3799,20 +3799,20 @@ class Series:
     def searchsorted(self, value, side: str = "left", sorter=None) -> "rnp.ndarray":
         """在已升序的 Series 中查找 value 的插入位置（二分查找）。
 
-        等价于 ``numpy.searchsorted`` / ``pandas.Series.searchsorted``。
+        等价于 ``rsarray.searchsorted`` / ``Series.searchsorted``。
 
         :param value: 标量或 list/tuple/ndarray，要查找的目标值
         :param side: ``"left"``（默认，bisect_left）或 ``"right"``（bisect_right）
         :param sorter: 可选整数索引数组（长度与 self 相同），使 ``self[sorter]``
                        为升序。当 self 本身无序时通过传入 ``np.argsort(self)``
                        实现正确的 searchsorted。可为 list/tuple/ndarray。
-        :return: rsnumpy 一维 ndarray（dtype=int64），长度与 ``value`` 扁平化后相同。
-                 单个标量输入时仍返回长度为 1 的数组（与 pandas 行为一致）。
+        :return: rsarray 一维 ndarray（dtype=int64），长度与 ``value`` 扁平化后相同。
+                 单个标量输入时仍返回长度为 1 的数组（与 主流库 行为一致）。
         """
-        import rsnumpy as rnp
+        import rsarray as rnp
 
-        # 预处理 sorter：若传入 rsnumpy.ndarray 则 list(tuple) 化以适配 Rust 端
-        # sorter 也可能是 numpy-like，取 tolist/迭代即可。
+        # 预处理 sorter：若传入 rsarray.ndarray 则 list(tuple) 化以适配 Rust 端
+        # sorter 也可能是 rsarray-like，取 tolist/迭代即可。
         if sorter is not None:
             if hasattr(sorter, "tolist"):
                 _sorter = sorter.tolist()
@@ -3868,7 +3868,7 @@ class Series:
         std = var**0.5
         g = sum((x - m) ** 3 for x in non_null) / (n * std**3)
         if not bias:
-            # 无偏修正 (与 pandas/scipy 一致)
+            # 无偏修正 (与 主流库/scipy 一致)
             g *= (n * (n - 1)) ** 0.5 / (n - 2)
         return g
 
@@ -3904,7 +3904,7 @@ class Series:
         std = var**0.5
         g2 = sum((x - m) ** 4 for x in non_null) / (n * std**4) - 3
         if not bias and n > 3:
-            # 无偏修正 (与 pandas/scipy 一致)
+            # 无偏修正 (与 主流库/scipy 一致)
             factor = ((n - 1) * (n + 1)) / ((n - 2) * (n - 3))
             g2 = factor * (g2 + 6 / (n + 1))
         if not fisher:
@@ -4004,13 +4004,13 @@ class Series:
                     for a, b in zip(parsed[: n + periods], parsed[-periods:])
                 ]
                 out = head + tail_pad
-        # datetime 列的 diff 返回 timedelta，转换为 pandas 兼容字符串
+        # datetime 列的 diff 返回 timedelta，转换为 主流库 兼容字符串
         if is_datetime:
             from ._internal._dataframe_helpers import _convert_to_basic
 
             out = [_convert_to_basic(v) if v is not None else None for v in out]
             result = Series(out, name=self.name, index=self._index)
-            # 标记为 timedelta64[us] dtype（与 pandas 行为一致）
+            # 标记为 timedelta64[us] dtype（与 主流库 行为一致）
             result._dtype_str = "timedelta64[us]"
             return result
         return Series(out, name=self.name, index=self._index)
@@ -4531,7 +4531,7 @@ class Series:
             new_s = Series(list(self.values), name=self.name, dtype=self._dtype_str)
         else:
             # 将索引作为新列返回（对于 Series，转为 DataFrame 更合适）
-            # pandas 行为：返回 DataFrame，包含 index 列和原 Series 列
+            # 主流库 行为：返回 DataFrame，包含 index 列和原 Series 列
             from .dataframe import DataFrame
 
             index_name = "index"
@@ -5133,8 +5133,8 @@ class Series:
 
     @property
     def array(self):
-        """返回底层值的 rsnumpy 数组（显示格式对齐 pandas NumpyExtensionArray）。"""
-        import rsnumpy as rnp
+        """返回底层值的 rsarray 数组（显示格式对齐 主流库 ExtensionArray）。"""
+        import rsarray as rnp
 
         return _ExtensionArray(rnp.array(self.values), self._dtype_str)
 
@@ -5163,7 +5163,7 @@ class Series:
                     and v.microsecond == 0
                 ):
                     return v.strftime("%Y-%m-%d")
-                # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+                # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
                 return v.isoformat().replace("T", " ", 1)
             if v is None:
                 return "NaN"
@@ -5172,7 +5172,7 @@ class Series:
             return str(v)
 
         def _format_floats_precise(values, precision=6):
-            """按 pandas 规则格式化浮点列表：每列统一精度。
+            """按 主流库 规则格式化浮点列表：每列统一精度。
 
             规则：先将所有有效值格式化为 precision 位小数，
             然后确定所需最大精度（去掉末尾零后），统一应用。
@@ -5248,7 +5248,7 @@ class Series:
 
             return full_result
 
-        # 字符串化每个值，float64 类型显示合适精度（对齐 pandas 行为）
+        # 字符串化每个值，float64 类型显示合适精度（对齐 主流库 行为）
         dtype_str = self._dtype_str
         if dtype_str in ("float64", "float32", "float16", "float"):
             strs = _format_floats_precise(list(self.values))
@@ -5319,7 +5319,7 @@ class Series:
         # 索引列宽度
         idx_width = max((len(s) for s in idx_strs), default=1)
 
-        # 值列宽度：基于整数部分的最大位数对齐（对齐 pandas 行为）
+        # 值列宽度：基于整数部分的最大位数对齐（对齐 主流库 行为）
         non_ellipsis_strs = [s for s in strs if s != "..."]
         if non_ellipsis_strs:
             max_str_len = max(len(s) for s in non_ellipsis_strs)
@@ -5346,7 +5346,7 @@ class Series:
         # 右对齐值字符串
         strs_aligned = [s.rjust(val_width) if s != "..." else s for s in strs]
 
-        # 使用列表推导式构建 lines（pandas 使用 3 个空格分隔索引和值）
+        # 使用列表推导式构建 lines（主流库 使用 3 个空格分隔索引和值）
         lines = [
             " .." if s == "..." else f"{idx_s:>{idx_width}}   {s}"
             for s, idx_s in zip(strs_aligned, idx_strs)
@@ -5367,19 +5367,19 @@ class Series:
             except (AttributeError, Exception):
                 pass
 
-        # 频率信息（对齐 pandas: Freq 放在 Name 之前，同一行）
+        # 频率信息（对齐 主流库: Freq 放在 Name 之前，同一行）
         freq_str = ""
         if self._freq is not None:
             freq_str = f"Freq: {self._freq}, "
 
-        # 对齐 pandas: name 为 None 时不显示 Name 行
+        # 对齐 主流库: name 为 None 时不显示 Name 行
         if self.name is not None and self.name != "":
             return f"{body}\n{freq_str}Name: {self.name}, dtype: {display_dtype}{categories_info}"
         else:
             return f"{body}\n{freq_str}dtype: {display_dtype}{categories_info}"
 
     # ----------------------------------------------------------------
-    # 扩展功能（pandas 之外的增强）
+    # 扩展功能（主流库 之外的增强）
     # ----------------------------------------------------------------
 
     def infer_type(self) -> str:

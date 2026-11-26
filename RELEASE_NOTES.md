@@ -77,10 +77,10 @@
 
 ### 修复问题
 
-- **修复 `DataFrame.sort_values()` 的 `na_position` 参数行为反转问题**：`na_position='first'` 和 `na_position='last'` 的行为现在与 pandas 一致
-- **修复 `rsnumpy.ndarray` 兼容性问题**：
+- **修复 `DataFrame.sort_values()` 的 `na_position` 参数行为反转问题**：`na_position='first'` 和 `na_position='last'` 的行为现在与主流库一致
+- **修复 `rsarray.ndarray` 兼容性问题**：
   - 0 维数组 `abs()` 现在返回 Python 标量，解决 `math.log10()` 类型错误
-  - DataFrame 构造函数现在正确处理 0D、1D、2D `rsnumpy.ndarray` 输入
+  - DataFrame 构造函数现在正确处理 0D、1D、2D `rsarray.ndarray` 输入
 - **修复 `DataFrameGroupBy` 的 `as_index=True` 行为**：聚合结果现在正确设置分组列为索引
 - **修复 Series 反向运算符实现**：`__rsub__`, `__rtruediv__` 等现在正确处理类型转换
 
@@ -99,7 +99,7 @@
 
 ### API 兼容性改进
 
-- 所有新增方法均与 pandas API 签名和默认值保持一致
+- 所有新增方法均与 DataFrame API 签名和默认值保持一致
 - `DataFrame.drop()` 支持 `index`, `columns`, `level`, `inplace`, `errors` 参数
 - `DataFrame.rename()` 支持 `index`, `columns`, `axis`, `copy`, `inplace`, `level`, `errors` 参数
 - `DataFrame.reset_index()` 支持 `level`, `inplace`, `col_level`, `col_fill` 参数

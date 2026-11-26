@@ -1,6 +1,6 @@
 """Parquet 与 Feather (Arrow IPC) 读写
 
-由 rspandas/io.py 拆分而来，向后兼容通过 :mod:`rspandas.io` 包入口保证。
+由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
 """
 
 from __future__ import annotations
@@ -21,14 +21,14 @@ def read_parquet(path: str, **kwargs) -> DataFrame:
     path : str
         Parquet 文件路径。
     **kwargs
-        忽略（兼容 pandas 签名）。
+        忽略（兼容 主流库 签名）。
 
     Returns
     -------
     DataFrame
     """
-    from ..rspandas import _DataFrame
-    from ..rspandas import read_parquet as _read_parquet_rust
+    from ..rsdata import _DataFrame
+    from ..rsdata import read_parquet as _read_parquet_rust
 
     cols, series_list = _read_parquet_rust(path)
     return DataFrame._from_inner(_DataFrame(cols, series_list))
@@ -60,9 +60,9 @@ def to_parquet(
     compression : str, optional, default 'snappy'
         压缩算法 (snappy, gzip, brotli, zstd, lz4, none)。
     **kwargs
-        忽略（兼容 pandas 签名）。
+        忽略（兼容 主流库 签名）。
     """
-    from ..rspandas import write_parquet as _write_parquet_rust
+    from ..rsdata import write_parquet as _write_parquet_rust
 
     cols = list(df.columns)
     series_list = [df._inner.get_column(c) for c in cols]
@@ -94,14 +94,14 @@ def read_feather(path: str, **kwargs) -> DataFrame:
     path : str
         Feather 文件路径。
     **kwargs
-        忽略（兼容 pandas 签名）。
+        忽略（兼容 主流库 签名）。
 
     Returns
     -------
     DataFrame
     """
-    from ..rspandas import _DataFrame
-    from ..rspandas import read_feather as _read_feather_rust
+    from ..rsdata import _DataFrame
+    from ..rsdata import read_feather as _read_feather_rust
 
     cols, series_list = _read_feather_rust(path)
     return DataFrame._from_inner(_DataFrame(cols, series_list))
@@ -124,9 +124,9 @@ def to_feather(
     compression : str, optional, default 'uncompressed'
         压缩算法 (当前 Arrow IPC v1 仅支持 uncompressed，其他值会静默降级)。
     **kwargs
-        忽略（兼容 pandas 签名）。
+        忽略（兼容 主流库 签名）。
     """
-    from ..rspandas import write_feather as _write_feather_rust
+    from ..rsdata import write_feather as _write_feather_rust
 
     cols = list(df.columns)
     series_list = [df._inner.get_column(c) for c in cols]

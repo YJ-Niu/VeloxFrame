@@ -1,6 +1,6 @@
 """Excel 读写：ExcelWriter / read_excel / to_excel
 
-由 rspandas/io.py 拆分而来，向后兼容通过 :mod:`rspandas.io` 包入口保证。
+由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class ExcelWriter:
 
     def close(self):
         """关闭写入器并保存文件。"""
-        from ..rspandas import write_xlsx_multi as _write_xlsx_multi
+        from ..rsdata import write_xlsx_multi as _write_xlsx_multi
 
         # 使用列表推导式替代显式 for 循环构建 sheets_data
         sheets_data = [
@@ -81,14 +81,14 @@ def read_excel(
     header : int, default 0
         用作列名的行号。
     **kwargs
-        忽略 (兼容 pandas 签名)。
+        忽略 (兼容 主流库 签名)。
 
     Returns
     -------
     DataFrame
     """
-    from ..rspandas import _DataFrame
-    from ..rspandas import read_xlsx as _read_xlsx
+    from ..rsdata import _DataFrame
+    from ..rsdata import read_xlsx as _read_xlsx
 
     if isinstance(sheet_name, int):
         cols, series_list = _read_xlsx(path, None, sheet_name, header)
@@ -121,9 +121,9 @@ def to_excel(
     header : bool, default True
         是否写入列名。
     **kwargs
-        忽略 (兼容 pandas 签名)。
+        忽略 (兼容 主流库 签名)。
     """
-    from ..rspandas import write_xlsx as _write_xlsx
+    from ..rsdata import write_xlsx as _write_xlsx
 
     cols = list(df.columns)
     series_list = [df._inner.get_column(c) for c in cols]

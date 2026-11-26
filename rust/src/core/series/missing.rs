@@ -1,7 +1,7 @@
 //! Series 缺失值处理：isnull / notnull / dropna / fillna / ffill / bfill / interpolate / sample / resample。
 //!
 //! - 缺失值统一以 None 表示（浮点 NaN 也视作缺失）
-//! - ffill / bfill / interpolate 与 pandas 默认行为对齐
+//! - ffill / bfill / interpolate 与 主流库 默认行为对齐
 //! - sample 提供可重现的 LCG 伪随机采样
 //! - resample 按时间桶聚合
 

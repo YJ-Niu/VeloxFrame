@@ -1,6 +1,6 @@
-"""rspandas.api.types - 类型判断函数。
+"""rsdata.api.types - 类型判断函数。
 
-提供与 pandas.api.types 兼容的类型检查函数。
+提供与 api.types 兼容的类型检查函数。
 """
 
 
@@ -144,7 +144,7 @@ def is_scalar(obj) -> bool:
 
     if isinstance(obj, (datetime.date, datetime.datetime, datetime.timedelta)):
         return True
-    # 拦截 numpy / rsnumpy 的 0 维数组
+    # 拦截 rsarray 的 0 维数组
     if hasattr(obj, "ndim") and obj.ndim == 0:
         return True
     return False

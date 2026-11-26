@@ -220,7 +220,7 @@ impl Series {
     // ---------- 累积运算 ----------
 
     /// 累积求和。仅 Int64/Float64 列加速；其他列返回 None。
-    /// None 位置保持当前累积值不变（前导 None 返回 None，匹配 pandas skipna=True 行为）。
+    /// None 位置保持当前累积值不变（前导 None 返回 None，匹配 主流库 skipna=True 行为）。
     pub fn cumsum(&self) -> Option<Series> {
         let data = match &self.data {
             ColumnData::Int(v) => {
@@ -523,10 +523,10 @@ impl Series {
     /// - 仅 Int64/Float64 列加速；其他列返回 None。
     /// - 跳过 None 与 NaN：原值或前值任一缺失时结果为 None。
     /// - 前值为 0 时结果为 None（避免除零）。
-    /// - ``periods == 0`` 返回全 0.0 的 Float64 Series（与 pandas 一致）。
+    /// - ``periods == 0`` 返回全 0.0 的 Float64 Series（与 主流库 一致）。
     /// - ``abs(periods) >= n`` 返回全 None 的 Series。
     ///
-    /// 结果恒为 Float64 列（与 pandas pct_change 一致）。
+    /// 结果恒为 Float64 列（与 主流库 pct_change 一致）。
     pub fn pct_change(&self, periods: i32) -> Option<Series> {
         let n = self.len();
         if n == 0 {
@@ -534,7 +534,7 @@ impl Series {
         }
         let p = periods;
         if p == 0 {
-            // 与 pandas 一致：返回全 0
+            // 与 主流库 一致：返回全 0
             let data = match &self.data {
                 ColumnData::Int(v) => {
                     let result: Vec<Option<f64>> = v.par_iter().map(|x| x.map(|_| 0.0)).collect();
@@ -906,7 +906,7 @@ mod tests {
 
     #[test]
     fn test_cumsum_leading_none() {
-        // 前导 None：保持 None（匹配 pandas skipna=True）
+        // 前导 None：保持 None（匹配 主流库 skipna=True）
         let s = Series::new_int(None, vec![None, Some(1), Some(2), None, Some(4)]);
         let r = s.cumsum().expect("cumsum 应成功");
         if let ColumnData::Int(v) = &r.data {

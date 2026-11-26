@@ -26,11 +26,11 @@ class Timestamp:
             self._dt = datetime.datetime(*args, **kwargs)
 
     def __repr__(self) -> str:
-        # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+        # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
         return f"Timestamp('{self._dt.isoformat().replace('T', ' ', 1)}')"
 
     def __str__(self) -> str:
-        # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+        # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
         return self._dt.isoformat().replace("T", " ", 1)
 
     def __eq__(self, other):
@@ -267,7 +267,7 @@ class _NaT:
 
 
 class _NA:
-    """pandas.NA（缺失值常量）。"""
+    """NA（缺失值常量）。"""
 
     def __repr__(self) -> str:
         return "<NA>"

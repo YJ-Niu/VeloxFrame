@@ -867,7 +867,7 @@ impl PySeries {
         }
     }
 
-    /// numpy.searchsorted：返回 values 在已升序（或经 sorter 重排后升序）的
+    /// rsarray.searchsorted：返回 values 在已升序（或经 sorter 重排后升序）的
     /// self 中的插入位置。返回与 values 等长的 usize 列表。
     #[pyo3(signature = (values, side="left", sorter=None))]
     fn searchsorted<'py>(
@@ -1610,7 +1610,7 @@ impl PySeries {
     // ---------- 乘积 ----------
 
     /// 元素乘积：Int64 列返回 int，Float64 列返回 float；其他列返回 None。
-    /// 空列返回 1（与 pandas min_count=0 一致）。
+    /// 空列返回 1（与 主流库 min_count=0 一致）。
     fn prod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let dtype = self.inner.dtype();
         let result = py.detach(|| match dtype {
@@ -1651,7 +1651,7 @@ impl PySeries {
 
     // ---------- argsort ----------
 
-    /// 返回排序后的位置索引列表（与 numpy.argsort 对齐）。
+    /// 返回排序后的位置索引列表（与 rsarray.argsort 对齐）。
     /// 稳定排序；None/NaN 放在末尾。
     fn argsort<'py>(&self, py: Python<'py>, ascending: bool) -> PyResult<Bound<'py, PyList>> {
         let idx: Vec<usize> = py.detach(|| self.inner.argsort(ascending));

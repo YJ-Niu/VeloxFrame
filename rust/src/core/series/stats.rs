@@ -1,6 +1,6 @@
 //! Series 聚合统计：count / sum / mean / min / max / std / var / median / any / all。
 //!
-//! 聚合语义与 pandas 默认行为对齐：
+//! 聚合语义与 主流库 默认行为对齐：
 //! - 缺失值 (None 与 NaN) 一律跳过 (skipna=True)
 //! - 空列或全缺失列返回 None；any/all 在空列上分别返回 false/true
 
@@ -186,7 +186,7 @@ impl Series {
         Some(r)
     }
     pub fn all(&self) -> Option<bool> {
-        // 空列：all 返回 True（与 pandas 一致）
+        // 空列：all 返回 True（与 主流库 一致）
         // 有缺失值：skipna=True（默认）跳过 None；全为 None 则返回 True
         let r: bool = match &self.data {
             ColumnData::Bool(v) => v.par_iter().filter_map(|x| *x).all(|x| x),
@@ -252,7 +252,7 @@ impl Series {
         let std = var.sqrt();
         let g = filtered.iter().map(|x| (x - m).powi(3)).sum::<f64>() / (n as f64 * std.powi(3));
         let result = if !bias {
-            // 无偏修正（与 pandas/scipy 一致）：sqrt(n*(n-1)) / (n-2)
+            // 无偏修正（与 主流库/scipy 一致）：sqrt(n*(n-1)) / (n-2)
             g * ((n * (n - 1)) as f64).sqrt() / (n - 2) as f64
         } else {
             g
@@ -306,7 +306,7 @@ impl Series {
     // ---------- 自相关 ----------
 
     /// 计算 lag 阶自相关系数。
-    /// - 跳过 None 与 NaN（与 pandas Series.autocorr 一致）
+    /// - 跳过 None 与 NaN（与 主流库 Series.autocorr 一致）
     /// - n <= lag 时返回 None
     /// - 任一截尾方差为 0 时返回 None
     pub fn autocorr(&self, lag: usize) -> Option<f64> {
@@ -335,7 +335,7 @@ impl Series {
     // ---------- 乘积 ----------
 
     /// Int64 列所有非空值的乘积；其他列返回 None。
-    /// 空列返回 Some(1)（与 pandas min_count=0 一致）。
+    /// 空列返回 Some(1)（与 主流库 min_count=0 一致）。
     pub fn prod_i64(&self) -> Option<i64> {
         if let ColumnData::Int(v) = &self.data {
             let mut acc: i64 = 1;

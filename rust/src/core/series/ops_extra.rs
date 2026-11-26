@@ -1,6 +1,6 @@
 //! Series 扩展运算：replace / diff / drop_duplicates / combine_first。
 //!
-//! 本模块提供 5 个加速方法，覆盖 pandas.Series 中常用的替换、差分、去重、
+//! 本模块提供 5 个加速方法，覆盖 Series 中常用的替换、差分、去重、
 //! 缺失值合并等场景。设计原则：
 //! - 仅在 Rust 层可加速的 dtype 上执行（Int64/Float64/Bool/Categorical），
 //!   Object 列（即 :class:`ColumnData::String`）统一返回 None，由 Python 层回退。
@@ -203,7 +203,7 @@ impl Series {
 
     /// 计算差分：``result[i] = self[i] - self[i - periods]``。
     ///
-    /// - ``periods > 0``：前 ``periods`` 个位置为 None（与 pandas 一致）。
+    /// - ``periods > 0``：前 ``periods`` 个位置为 None（与 主流库 一致）。
     /// - ``periods < 0``：后 ``|periods|`` 个位置为 None。
     /// - ``periods == 0``：返回与 self 完全相同的 Series。
     /// - Int64/Float64 列：逐元素相减，None 传播（任一侧缺失则结果为 None）。
@@ -482,7 +482,7 @@ impl Series {
                     .into_par_iter()
                     .map(|i| match (a[i], b[i]) {
                         (Some(x), _) => Some(x),
-                        // 同时处理 NaN：self[i] 为 NaN 时也用 other[i] 替换（与 pandas 一致）
+                        // 同时处理 NaN：self[i] 为 NaN 时也用 other[i] 替换（与 主流库 一致）
                         (None, Some(y)) => Some(y),
                         (None, None) => None,
                     })
@@ -524,7 +524,7 @@ impl Series {
 
     /// 计算众数：返回出现次数最多的值（可能多个），按升序排列。
     ///
-    /// 行为对齐 ``pandas.Series.mode``：
+    /// 行为对齐 ``Series.mode``：
     /// - 跳过 None / NaN，仅统计非空值的出现次数。
     /// - 空列或全 None 列返回 None（由 Python 层回退到空 Series）。
     /// - 支持的 dtype：Int64 / Float64 / Bool / String / Categorical。

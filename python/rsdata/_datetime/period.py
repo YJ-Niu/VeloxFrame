@@ -1,6 +1,6 @@
 """周期：period_range
 
-由 rspandas/_datetime.py 拆分而来。
+由 rsdata/_datetime.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from ._common import _parse_iso, _freq_to_timedelta
 def period_range(start=None, end=None, periods=None, freq="D", name=None):
     """生成周期范围。
 
-    与 pandas 一致，默认 freq='D'（当 start 是日期字符串时）。
+    与 主流库 一致，默认 freq='D'（当 start 是日期字符串时）。
     返回 PeriodIndex，dtype 显示为 period[freq]。
 
     :param start: 起始日期 (str/datetime/date)

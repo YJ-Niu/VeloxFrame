@@ -62,7 +62,7 @@ pub(crate) enum AggResult {
 // =====================================================================
 
 /// Python 端 _Series，包装 Rust Series
-#[pyclass(name = "_Series", module = "rspandas", from_py_object)]
+#[pyclass(name = "_Series", module = "rsdata", from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PySeries {
     pub inner: Series,
@@ -195,7 +195,7 @@ impl PySeries {
 // factorize 函数
 // =====================================================================
 
-/// 对输入值进行 factorize 编码 (类似 pandas.factorize)
+/// 对输入值进行 factorize 编码 (类似 factorize)
 /// 返回 (codes, categories)
 #[pyfunction]
 pub fn factorize<'py>(

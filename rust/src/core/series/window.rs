@@ -200,7 +200,7 @@ impl Series {
     pub fn value_counts(&self, sort: bool, ascending: bool) -> (Vec<String>, Vec<u64>) {
         use std::collections::HashMap;
         let mut map: HashMap<String, u64> = HashMap::new();
-        // 记录首次出现顺序，用于稳定排序（对齐 pandas 的稳定计数顺序，避免 HashMap
+        // 记录首次出现顺序，用于稳定排序（对齐 主流库 的稳定计数顺序，避免 HashMap
         // 随机遍历导致并列计数时顺序不稳定）。
         let mut order: Vec<String> = Vec::new();
 
@@ -398,7 +398,7 @@ impl Series {
                     let s = prefix_sum[end] - prefix_sum[start];
                     let s2 = prefix_sum_sq[end] - prefix_sum_sq[start];
                     let mean = s / cnt as f64;
-                    // 总体方差 = s2/n - mean^2；样本方差需 /(n-1)（与 pandas ddof=1 一致）
+                    // 总体方差 = s2/n - mean^2；样本方差需 /(n-1)（与 主流库 ddof=1 一致）
                     let var = (s2 - s * mean) / (cnt - 1) as f64;
                     Some(var.max(0.0).sqrt())
                 } else {

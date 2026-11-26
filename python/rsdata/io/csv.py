@@ -1,6 +1,6 @@
 """CSV 读写：read_csv / read_csv_chunked / to_csv
 
-由 rspandas/io.py 拆分而来，向后兼容通过 :mod:`rspandas.io` 包入口保证。
+由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def read_csv(
 ) -> DataFrame:
     """读取 CSV 文件为 DataFrame。
 
-    与 ``pandas.read_csv`` 签名对齐。支持的参数子集见下方说明，
+    与 ``read_csv`` 签名对齐。支持的参数子集见下方说明，
     其他参数为兼容性参数（若传入则忽略或部分支持）。
 
     Parameters
@@ -186,7 +186,7 @@ def read_csv(
     header_rows_count = 1
     effective_header = header
 
-    # 处理 names 与 header 的交互（pandas 行为）
+    # 处理 names 与 header 的交互（主流库 行为）
     if names is not None and names is not _NO_DEFAULT:
         if header == "infer":
             effective_header = None
@@ -230,7 +230,7 @@ def read_csv(
         and (not isinstance(effective_header, int) or effective_header <= 0)
     )
     if _is_fast_path:
-        from ..rspandas import read_csv_path_raw as _read_csv_path_raw
+        from ..rsdata import read_csv_path_raw as _read_csv_path_raw
 
         _path = str(filepath_or_buffer)
         # 推断压缩格式
@@ -271,7 +271,7 @@ def read_csv(
         and header_rows_count <= 1
     )
     if _is_typed_fast:
-        from ..rspandas import read_csv_path_typed as _read_csv_path_typed
+        from ..rsdata import read_csv_path_typed as _read_csv_path_typed
 
         _path = str(filepath_or_buffer)
         _skiprows_list: Optional[list] = None
@@ -323,7 +323,7 @@ def read_csv(
             else:
                 cols = [str(i) for i in range(len(rust_series))]
             cols = [f"Unnamed: {i}" if c == "" else c for i, c in enumerate(cols)]
-            # 列名去重（pandas 行为：foo, foo -> foo, foo.1）
+            # 列名去重（主流库 行为：foo, foo -> foo, foo.1）
             seen = {}
             new_cols = []
             for c in cols:
@@ -442,7 +442,7 @@ def read_csv(
         if len(sep) != 1:
             return _DataFrame()
 
-        from ..rspandas import parse_csv_raw as _parse_csv_raw
+        from ..rsdata import parse_csv_raw as _parse_csv_raw
 
         try:
             rust_headers, cols_data = _parse_csv_raw(
@@ -509,10 +509,10 @@ def read_csv(
         else:
             cols = names_list + [str(i) for i in range(len(names_list), len(cols))]
 
-    # 空列名处理（pandas 行为）
+    # 空列名处理（主流库 行为）
     cols = [f"Unnamed: {i}" if c == "" else c for i, c in enumerate(cols)]
 
-    # 列名去重（pandas 行为：foo, foo -> foo, foo.1）
+    # 列名去重（主流库 行为：foo, foo -> foo, foo.1）
     seen = {}
     new_cols = []
     for c in cols:
@@ -759,7 +759,7 @@ def read_csv(
             for c in cols:
                 _dtype_overrides[c] = dt_str
     else:
-        # 自动类型推断（与 pandas 行为一致）
+        # 自动类型推断（与 主流库 行为一致）
         # 对每列尝试 int -> float -> bool -> str 的顺序推断
         for c in cols:
             if c in data:
@@ -842,8 +842,8 @@ def read_csv_chunked(
         return
 
     try:
-        from ..rspandas import read_csv_chunks as _read_csv_chunks_rust
-        from ..rspandas import read_file_to_string as _read_file_to_string
+        from ..rsdata import read_csv_chunks as _read_csv_chunks_rust
+        from ..rsdata import read_file_to_string as _read_file_to_string
 
         content = _read_file_to_string(path)
         chunks = _read_csv_chunks_rust(
@@ -881,7 +881,7 @@ def to_csv(
     df: DataFrame, path=None, sep: str = ",", index: bool = True, **kwargs
 ) -> Optional[str]:
     """将 DataFrame 写入 CSV 文件或返回 CSV 字符串。"""
-    from ..rspandas import write_csv_string as _write_csv_string
+    from ..rsdata import write_csv_string as _write_csv_string
 
     # 使用 Rust 层的 write_csv_string
     cols = list(df.columns)
@@ -889,7 +889,7 @@ def to_csv(
     csv_str = _write_csv_string(cols, series_list, True, sep)
 
     if path:
-        from ..rspandas import write_csv_path as _write_csv_path
+        from ..rsdata import write_csv_path as _write_csv_path
 
         _write_csv_path(path, cols, series_list, True, sep)
         return None

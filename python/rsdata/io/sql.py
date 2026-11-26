@@ -1,6 +1,6 @@
 """SQL 读写：read_sql / read_sql_query / read_sql_table / to_sql / to_sql_batch
 
-由 rspandas/io.py 拆分而来，向后兼容通过 :mod:`rspandas.io` 包入口保证。
+由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def read_sql(
     conn : sqlalchemy Engine 或 Connection
         数据库连接。
     **kwargs
-        忽略 (兼容 pandas 签名)。
+        忽略 (兼容 主流库 签名)。
 
     Returns
     -------
@@ -173,7 +173,7 @@ def to_sql(
     index : bool, default False
         是否写入行索引。
     **kwargs
-        忽略 (兼容 pandas 签名)。
+        忽略 (兼容 主流库 签名)。
     """
     try:
         import sqlalchemy as sa

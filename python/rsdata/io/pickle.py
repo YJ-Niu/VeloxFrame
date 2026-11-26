@@ -1,6 +1,6 @@
 """Pickle 读写：read_pickle / to_pickle
 
-由 rspandas/io.py 拆分而来，向后兼容通过 :mod:`rspandas.io` 包入口保证。
+由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
 """
 
 from __future__ import annotations

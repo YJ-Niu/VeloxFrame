@@ -1,6 +1,6 @@
 """日期时间：DatetimeSeries / DatetimeAccessor / to_datetime / date_range / bdate_range / infer_freq
 
-由 rspandas/_datetime.py 拆分而来。
+由 rsdata/_datetime.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -72,12 +72,12 @@ class DatetimeSeries:
 
     @property
     def array(self):
-        """返回底层 rsnumpy ndarray（与 pandas Index.array 行为一致）。
+        """返回底层 rsarray ndarray（与 主流库 Index.array 行为一致）。
 
-        由于 rsnumpy 底层仅支持 f64，此处返回 ISO 字符串数组，
+        由于 rsarray 底层仅支持 f64，此处返回 ISO 字符串数组，
         调用方如需 datetime 对象应使用 .values 属性。
         """
-        import rsnumpy as rnp
+        import rsarray as rnp
 
         return rnp.array(self._inner.values)
 
@@ -97,7 +97,7 @@ class DatetimeSeries:
         return len(self._inner)
 
     def __repr__(self) -> str:
-        # 对齐 pandas DatetimeIndex 格式
+        # 对齐 主流库 DatetimeIndex 格式
         date_strs = []
         for v in self.values:
             if isinstance(v, datetime):
@@ -112,7 +112,7 @@ class DatetimeSeries:
                     date_strs.append(repr(str(v)))
             else:
                 date_strs.append(repr(v))
-        # 多行显示（每行最多 4 个值，对齐 pandas 行为）
+        # 多行显示（每行最多 4 个值，对齐 主流库 行为）
         items_per_line = 4
         name = f", name='{self.name}'" if self.name else ""
         freq_str = f", freq='{self._freq}'" if self._freq else ""
@@ -121,7 +121,7 @@ class DatetimeSeries:
             return f"DatetimeIndex([{joined}], dtype='datetime64[us]'{freq_str}{name})"
         # 多行模式
         lines = []
-        indent = " " * 15  # 对齐 pandas 的缩进
+        indent = " " * 15  # 对齐 主流库 的缩进
         n = len(date_strs)
         for i in range(0, n, items_per_line):
             chunk = date_strs[i : i + items_per_line]  # noqa
@@ -185,13 +185,13 @@ class DatetimeSeries:
         )
 
     def to_numpy(self, dtype=None, copy: bool = True, na_value: Any = None):
-        """转换为 rsnumpy array（与 pandas DatetimeIndex.to_numpy 行为对齐）。
+        """转换为 rsarray array（与 主流库 DatetimeIndex.to_numpy 行为对齐）。
 
         - `dtype=object` 或 `dtype='object'`: 返回 datetime 对象数组 (object dtype)
         - `dtype=datetime64[ns]` / `dtype='datetime64[ns]'`: 返回 int64 纳秒纪元数组
         - 默认（dtype=None）: 同 'datetime64[ns]' 语义，返回纳秒纪元 f64/int64 数组
         """
-        import rsnumpy as rnp
+        import rsarray as rnp
 
         vals = self.values
         # 处理 na_value
@@ -204,7 +204,7 @@ class DatetimeSeries:
         else:
             dtype_str = str(dtype).lower()
         if dtype_str in ("object", "o"):
-            # rsnumpy 不直接支持对象数组，退回 list 包装后 rnp.array(object dtype)
+            # rsarray 不直接支持对象数组，退回 list 包装后 rnp.array(object dtype)
             return rnp.array(list(vals))
         # datetime64[ns] (或 datetime64[us]/[ms] 简化为 ns)
         if dtype_str.startswith("datetime64"):
@@ -269,7 +269,7 @@ class DatetimeAccessor:
             if v is None:
                 converted.append(None)
             elif isinstance(v, (datetime, date, time)):
-                # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+                # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
                 s = v.isoformat() if hasattr(v, "isoformat") else str(v)
                 if "T" in s:
                     s = s.replace("T", " ", 1)
@@ -318,7 +318,7 @@ class DatetimeAccessor:
 
     @property
     def weekday(self) -> Series:
-        """返回星期几 (0=周一, 6=周日)，与 pandas 一致。"""
+        """返回星期几 (0=周一, 6=周日)，与 主流库 一致。"""
         return self._wrap_series(
             [v.weekday() if v is not None else None for v in self._s.values]
         )
@@ -643,7 +643,7 @@ def to_datetime(
                     out.append(_parse_iso(v))
             else:
                 if errors == "coerce":
-                    # pandas: errors='coerce' 时无法解析的元素变为 NaT（用 None 表示）
+                    # 主流库: errors='coerce' 时无法解析的元素变为 NaT（用 None 表示）
                     out.append(None)
                 elif errors == "ignore":
                     out.append(v)
@@ -651,14 +651,14 @@ def to_datetime(
                     raise ValueError(f"cannot convert {v!r} to datetime")
         except (ValueError, TypeError, OverflowError):
             if errors == "coerce":
-                # pandas: errors='coerce' 时无法解析的元素变为 NaT（用 None 表示）
+                # 主流库: errors='coerce' 时无法解析的元素变为 NaT（用 None 表示）
                 out.append(None)
             elif errors == "ignore":
                 out.append(v)
             else:
                 raise
 
-    # list/tuple 输入返回 DatetimeIndex（对齐 pandas）
+    # list/tuple 输入返回 DatetimeIndex（对齐 主流库）
     if isinstance(arg, (list, tuple)):
         from ..indexes import DatetimeIndex
 
@@ -687,7 +687,7 @@ def date_range(
     :param normalize: 是否把 start/end 归一到午夜 (默认 False)
     :param name: 返回的 DatetimeSeries 的 name
     :param inclusive: 区间包含性 ('both'/'left'/'right'/'neither'), 默认 'both'
-    :param unit: str (保留参数, 目前忽略, 与 pandas 签名对齐)
+    :param unit: str (保留参数, 目前忽略, 与 主流库 签名对齐)
     :return: DatetimeSeries
     """
     tzobj = _normalize_tz(tz)

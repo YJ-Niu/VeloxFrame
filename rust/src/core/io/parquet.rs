@@ -203,7 +203,7 @@ fn parse_compression(s: &str) -> Compression {
         "zstd" => Compression::ZSTD(ZstdLevel::default()),
         "lz4" => Compression::LZ4_RAW,
         "none" | "uncompressed" | "" => Compression::UNCOMPRESSED,
-        // brotli 已移除（极少使用），未知算法回退到 snappy（与 pandas 默认一致）
+        // brotli 已移除（极少使用），未知算法回退到 snappy（与 主流库 默认一致）
         _ => Compression::SNAPPY,
     }
 }

@@ -1,11 +1,11 @@
 """分箱与列联表工具函数 (v1.3.0)。
 
-包含 cut / qcut / crosstab / get_dummies 等与 pandas 兼容的工具函数。
+包含 cut / qcut / crosstab / get_dummies 等与 主流库 兼容的工具函数。
 """
 
 from __future__ import annotations
 
-from ..rspandas import _DataFrame as rspandas_DataFrame  # type: ignore
+from ..rsdata import _DataFrame as rsdata_DataFrame  # type: ignore
 from ..series import Series
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union
@@ -20,7 +20,7 @@ def get_dummies(
     prefix: Optional[Union[str, List[str]]] = None,
     prefix_sep: str = "_",
     columns: Optional[List[str]] = None,
-) -> rspandas_DataFrame:
+) -> rsdata_DataFrame:
     """将分类变量转换为哑变量（one-hot 编码）。
 
     Parameters
@@ -74,7 +74,7 @@ def get_dummies(
     )
 
 
-def _get_dummies_series(values: list, prefix: str, sep: str) -> rspandas_DataFrame:
+def _get_dummies_series(values: list, prefix: str, sep: str) -> rsdata_DataFrame:
     """对单个 Series 做 one-hot 编码。"""
     from ..dataframe import DataFrame as _DataFrame
 
@@ -90,7 +90,7 @@ def _get_dummies_series(values: list, prefix: str, sep: str) -> rspandas_DataFra
     return _DataFrame(result_data)
 
 
-def _concat_frames(frames: list) -> rspandas_DataFrame:
+def _concat_frames(frames: list) -> rsdata_DataFrame:
     """横向拼接 DataFrame，去掉重复列。"""
     from ..dataframe import DataFrame as _DataFrame
 
@@ -166,7 +166,7 @@ def cut(
             bins = [min_val + i * bin_width for i in range(bins + 1)]
             # 修正浮点精度: 确保最后一个边界等于 max_val
             bins[-1] = max_val
-        # 当 bins 为 int 时，自动包含最小值 (与 pandas 一致)
+        # 当 bins 为 int 时，自动包含最小值 (与 主流库 一致)
         include_lowest = True
     else:
         bins = list(bins)
@@ -321,7 +321,7 @@ def crosstab(
     colnames=None,
     margins: bool = False,
     normalize: Union[bool, str] = False,
-) -> rspandas_DataFrame:
+) -> rsdata_DataFrame:
     """计算交叉表。
 
     Parameters

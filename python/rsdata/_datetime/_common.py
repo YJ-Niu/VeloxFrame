@@ -1,6 +1,6 @@
 """datetime 内部辅助函数
 
-由 rspandas/_datetime.py 拆分而来。
+由 rsdata/_datetime.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ def _parse_iso(s: str) -> datetime:
         except ValueError as e:
             last_err = e
             continue
-    # 尝试解析特殊关键字（对齐 pandas）：now/today 等
+    # 尝试解析特殊关键字（对齐 主流库）：now/today 等
     lower_s = s.lower().strip()
     if lower_s in ("now", "today"):
         return datetime.now()
@@ -102,7 +102,7 @@ def _parse_iso(s: str) -> datetime:
 def _to_iso(v) -> Optional[str]:
     """将 datetime/date/None 转换为 ISO 字符串。
 
-    与 pandas 一致：
+    与 主流库 一致：
     - 日期与时间之间使用空格分隔（而非 ISO 默认的 'T'）。
     - naive datetime 当时间部分全为 0 时，只显示日期部分。
     - aware datetime 始终显示完整时间（含时区偏移）。
@@ -119,7 +119,7 @@ def _to_iso(v) -> Optional[str]:
             and v.microsecond == 0
         ):
             return v.strftime("%Y-%m-%d")
-        # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+        # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
         s = v.isoformat()
         if "T" in s:
             s = s.replace("T", " ", 1)
@@ -220,7 +220,7 @@ def _localize(dt: datetime, tz: Any) -> datetime:
 def _parse_timedelta_str(s: str) -> timedelta:
     """解析 timedelta 字符串。
 
-    支持的格式（与 pandas 兼容）：
+    支持的格式（与 主流库 兼容）：
     - "1 day 00:00:05" / "1 days 00:00:05"
     - "1 day" / "2 days" / "3 hours" / "5 minutes" / "10 seconds"
     - "00:00:05" (HH:MM:SS)

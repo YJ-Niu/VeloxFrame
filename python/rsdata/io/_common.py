@@ -1,6 +1,6 @@
 """IO 公共辅助：日期解析/dtype 推断/文本读取器等内部工具
 
-由 rspandas/io.py 拆分而来，向后兼容通过 :mod:`rspandas.io` 包入口保证。
+由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def _parse_date_series(values, date_format, dayfirst):
     """将字符串列表解析为 datetime 对象列表。
 
     支持 date_format 为 dict（按列名指定格式）或 str（统一格式）。
-    与 pandas 行为对齐：date_format 作为 dict 时，key 为列名，value 为格式字符串。
+    与 主流库 行为对齐：date_format 作为 dict 时，key 为列名，value 为格式字符串。
     """
     import datetime as _datetime_module
 
@@ -96,7 +96,7 @@ def _parse_cols_items(parse_dates):
 
 
 def _infer_column_type(values):
-    """自动推断列类型（与 pandas 行为一致）。
+    """自动推断列类型（与 主流库 行为一致）。
 
     尝试顺序: int -> float -> bool -> str/object
     NaN/None 跳过不参与推断，但保留为 None。
@@ -182,7 +182,7 @@ def _infer_column_type(values):
             for v in values
         ]
 
-    # 默认：逐值类型推断（与 pandas 行为一致：混合类型列保持 object dtype）
+    # 默认：逐值类型推断（与 主流库 行为一致：混合类型列保持 object dtype）
     # 如果列中全为 datetime 对象，不转换（保持 datetime 类型）
     if all(v is None or isinstance(v, datetime) for v in values):
         return values
@@ -274,13 +274,13 @@ def _read_content(filepath_or_buffer, compression, encoding, encoding_errors):
                 content = f.read()
                 return content.decode(enc, errors=encoding_errors)
     # 无压缩：使用 Rust 层读取文件内容
-    from ..rspandas import read_file_to_string as _read_file_to_string
+    from ..rsdata import read_file_to_string as _read_file_to_string
 
     return _read_file_to_string(path)
 
 
 class _TextFileReader:
-    """分块读取 CSV 文件的迭代器（与 pandas TextFileReader 行为对齐）。"""
+    """分块读取 CSV 文件的迭代器（与 主流库 TextFileReader 行为对齐）。"""
 
     def __init__(
         self,
@@ -480,7 +480,7 @@ class StreamDataFrame:
 
     用法::
 
-        >>> from rspandas.io import StreamDataFrame
+        >>> from rsdata.io import StreamDataFrame
         >>> sdf = StreamDataFrame(read_csv_chunked('big.csv', chunk_size=100))
         >>> result = sdf.filter(lambda df: df['val'] > 0).map(lambda df: df.head(10)).collect()
     """

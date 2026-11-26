@@ -1,8 +1,8 @@
 //! Series 排序与查找：sort_values / sort_index / searchsorted / arg_top_n。
 //!
-//! - sort_values / sort_index 与 pandas 默认行为对齐（None 的位置随 ascending 切换）
-//! - searchsorted 等价于 numpy.searchsorted，支持 side 与 sorter
-//! - arg_top_n 对应 pandas.Series.nsmallest / nlargest，支持 keep=first/last/all
+//! - sort_values / sort_index 与 主流库 默认行为对齐（None 的位置随 ascending 切换）
+//! - searchsorted 等价于 rsarray.searchsorted，支持 side 与 sorter
+//! - arg_top_n 对应 Series.nsmallest / nlargest，支持 keep=first/last/all
 
 use crate::core::dtype::{CategoricalData, ColumnData};
 use crate::core::series::Series;
@@ -211,15 +211,15 @@ impl Series {
         }
     }
 
-    /// 二分查找插入位置（等价于 numpy.searchsorted）。
+    /// 二分查找插入位置（等价于 rsarray.searchsorted）。
     ///
     /// - values: 需要查找的目标值列表（已转成 f64）
     /// - side: "left" | "right"
     /// - sorter: 可选长度等于 self.len() 的索引数组，使得 `a[sorter]` 为升序；
     ///   若为 None 则假定 self 本身已升序。
     ///
-    /// 行为：NaNs（self 或 values 中的 NaN）与 numpy 保持一致：
-    /// - self 中的 NaN 会被放在有序序列末尾（与 pandas.Series.searchsorted 行为一致，
+    /// 行为：NaNs（self 或 values 中的 NaN）与 rsarray 保持一致：
+    /// - self 中的 NaN 会被放在有序序列末尾（与 Series.searchsorted 行为一致，
     ///   NaN 比较视为大于任何有限值）；
     /// - values 中的 NaN 将插入到最末尾（>= len(arr)）。
     pub fn searchsorted(&self, values: &[f64], side: &str, sorter: Option<&[usize]>) -> Vec<usize> {
@@ -261,7 +261,7 @@ impl Series {
             .collect()
     }
 
-    /// 返回排序后的位置索引数组（等价于 numpy.argsort）。
+    /// 返回排序后的位置索引数组（等价于 rsarray.argsort）。
     ///
     /// - 非 None / 非 NaN 值先按 ascending 排序
     /// - None / NaN 统一放在末尾，保持原顺序
@@ -300,7 +300,7 @@ impl Series {
     /// - `keep`: 重复值保留方式（"first" / "last" / "all"）
     /// - `largest`: true=nlargest（降序），false=nsmallest（升序）
     ///
-    /// 行为与 pandas.Series.nsmallest/nlargest 一致：
+    /// 行为与 Series.nsmallest/nlargest 一致：
     /// - None 与 NaN 一律跳过（不返回）
     /// - 使用稳定排序，``keep="first"`` 时保留原顺序中先出现者
     /// - ``keep="all"`` 时返回所有等于第 n 个值的元素（可能多于 n）

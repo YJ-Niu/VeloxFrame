@@ -582,7 +582,7 @@ pub fn write_string_to_file<'py>(py: Python<'py>, path: &str, content: &str) -> 
     })
 }
 
-/// 判断字符串是否为 pandas 默认 NaN 值。
+/// 判断字符串是否为 主流库 默认 NaN 值。
 fn is_default_na(s: &str) -> bool {
     matches!(
         s,

@@ -1,15 +1,15 @@
-"""rsnumpy 函数包装器
+"""rsarray 函数包装器
 
-将 rsnumpy 的数学函数包装为对 Series/DataFrame 返回正确类型。
+将 rsarray 的数学函数包装为对 Series/DataFrame 返回正确类型。
 由 __init__.py 拆分而来。
 """
 
 from __future__ import annotations
 
 
-def _wrap_rsnumpy_functions():
-    """包装 rsnumpy 的数学函数，使其对 Series/DataFrame 返回正确类型。"""
-    import rsnumpy as _rnp
+def _wrap_rsarray_functions():
+    """包装 rsarray 的数学函数，使其对 Series/DataFrame 返回正确类型。"""
+    import rsarray as _rnp
     from .series import Series as _Series
     from .dataframe import DataFrame as _DataFrame
 
@@ -17,8 +17,8 @@ def _wrap_rsnumpy_functions():
         """检查对象是否为 Series 或 DataFrame。"""
         return isinstance(obj, _Series) or isinstance(obj, _DataFrame)
 
-    def _ensure_rsnumpy_array(obj):
-        """将 Series/DataFrame 转换为 rsnumpy ndarray。"""
+    def _ensure_rsarray_array(obj):
+        """将 Series/DataFrame 转换为 rsarray ndarray。"""
         if isinstance(obj, _Series):
             return obj.to_numpy()
         if isinstance(obj, _DataFrame):
@@ -30,7 +30,7 @@ def _wrap_rsnumpy_functions():
         original_func = getattr(_rnp, func_name)
 
         def _to_scalar(val):
-            """将 rsnumpy 0-dim ndarray 转为 Python 标量。"""
+            """将 rsarray 0-dim ndarray 转为 Python 标量。"""
             if hasattr(val, "item"):
                 return val.item()
             if hasattr(val, "tolist"):
@@ -79,7 +79,7 @@ def _wrap_rsnumpy_functions():
         original_func = getattr(_rnp, func_name)
 
         def _to_scalar(val):
-            """将 rsnumpy 0-dim ndarray 转为 Python 标量。"""
+            """将 rsarray 0-dim ndarray 转为 Python 标量。"""
             if hasattr(val, "item"):
                 return val.item()
             if hasattr(val, "tolist"):
@@ -170,7 +170,7 @@ def _wrap_rsnumpy_functions():
                         if idx not in seen:
                             seen.add(idx)
                             union_idx.append(idx)
-                    # 排序并集以匹配 pandas 行为
+                    # 排序并集以匹配 主流库 行为
                     try:
                         union_idx = sorted(union_idx)
                     except TypeError:
@@ -310,19 +310,19 @@ def _wrap_rsnumpy_functions():
         if hasattr(_rnp, fname):
             setattr(_rnp, fname, _apply_binary_ufunc(fname))
 
-    # 包装 asarray 使其对 Series/DataFrame 返回 rsnumpy ndarray（显示格式对齐 pandas）
+    # 包装 asarray 使其对 Series/DataFrame 返回 rsarray ndarray（显示格式对齐 主流库）
     original_asarray = _rnp.asarray if hasattr(_rnp, "asarray") else None
     if original_asarray is not None:
 
         def _wrap_asarray(a, *args, **kwargs):
             if isinstance(a, _Series):
-                # 返回 rsnumpy ndarray 以获得正确的显示格式
-                # 将 None 替换为 NaN (rsnumpy 不支持 None)
+                # 返回 rsarray ndarray 以获得正确的显示格式
+                # 将 None 替换为 NaN (rsarray 不支持 None)
                 vals = list(a.values)
                 vals = [float("nan") if v is None else v for v in vals]
                 return _rnp.array(vals, *args, **kwargs)
             if isinstance(a, _DataFrame):
-                # 将 DataFrame 转换为 rsnumpy 二维数组
+                # 将 DataFrame 转换为 rsarray 二维数组
                 cols = list(a._columns)
                 data = [
                     [
@@ -341,9 +341,9 @@ def _wrap_rsnumpy_functions():
         _rnp.asarray = _wrap_asarray
 
     # 包装聚合函数 (mean/sum/std/var/min/max/median/prod)
-    # 使 Series 输入时默认排除 NA (与 pandas 行为一致):
+    # 使 Series 输入时默认排除 NA (与 主流库 行为一致):
     #   np.mean(series)            -> 排除 NA (委托给 series.mean(skipna=True))
-    #   np.mean(series.to_numpy()) -> 不排除 NA (走 rsnumpy 原生路径)
+    #   np.mean(series.to_numpy()) -> 不排除 NA (走 rsarray 原生路径)
     _reduction_map = {
         "mean": "mean",
         "sum": "sum",
@@ -367,8 +367,8 @@ def _wrap_rsnumpy_functions():
                 if isinstance(a, _Series):
                     method = getattr(a, _mn)
                     if _fn in ("std", "var"):
-                        # pandas 默认 ddof=1, numpy 默认 ddof=0
-                        # np.std(series) 采用 pandas 语义 (ddof=1)
+                        # 主流库 默认 ddof=1, rsarray 默认 ddof=0
+                        # np.std(series) 采用 主流库 语义 (ddof=1)
                         ddof = kwargs.get("ddof", None)
                         if ddof is None and len(args) > 3:
                             ddof = args[3]
@@ -400,6 +400,6 @@ def _wrap_rsnumpy_functions():
 
 # 在模块加载时执行包装
 try:
-    _wrap_rsnumpy_functions()
+    _wrap_rsarray_functions()
 except Exception:
-    pass  # rsnumpy 未安装时静默忽略
+    pass  # rsarray 未安装时静默忽略

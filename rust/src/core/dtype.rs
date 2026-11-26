@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use rayon::prelude::*;
 
-/// 逻辑类型，对应 pandas 的 dtype 名称
+/// 逻辑类型，对应 主流库 的 dtype 名称
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DType {
     Int64,
@@ -18,7 +18,7 @@ pub enum DType {
 }
 
 impl DType {
-    /// 返回与 pandas 等价的 dtype 字符串
+    /// 返回与 主流库 等价的 dtype 字符串
     pub fn as_str(&self) -> &'static str {
         match self {
             DType::Int64 => "int64",
@@ -276,7 +276,7 @@ impl ColumnData {
     }
     pub fn fillna_f64(&self, v: f64) -> ColumnData {
         if let ColumnData::Float(col) = self {
-            // 同时填充 None 和 NaN（与 pandas fillna 行为一致）
+            // 同时填充 None 和 NaN（与 主流库 fillna 行为一致）
             ColumnData::Float(
                 col.par_iter()
                     .map(|x| match x {

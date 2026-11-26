@@ -5,13 +5,13 @@
   / ``CategoricalIndex`` / ``DatetimeIndex`` / ``TimedeltaIndex`` / ``PeriodIndex``
 - ``binning``: ``cut`` / ``qcut`` / ``crosstab`` / ``get_dummies``
 
-向后兼容：``rspandas.indexes.Series`` / ``rspandas.indexes.rspandas_DataFrame``
+向后兼容：``rsdata.indexes.Series`` / ``rsdata.indexes.rsdata_DataFrame``
 仍然可访问，供老代码使用。
 """
 
 from __future__ import annotations
 
-from ..rspandas import _DataFrame as rspandas_DataFrame  # type: ignore  # noqa: F401
+from ..rsdata import _DataFrame as rsdata_DataFrame  # type: ignore  # noqa: F401
 from ..series import Series  # noqa: F401
 from .base import (
     CategoricalIndex,
@@ -39,5 +39,5 @@ __all__ = [
     "crosstab",
     "get_dummies",
     "Series",
-    "rspandas_DataFrame",
+    "rsdata_DataFrame",
 ]

@@ -112,7 +112,7 @@ jobs:
           path: dist
 
   # ---------------- 发布到 PyPI（仅标签 / Release 触发）----------------
-  # 测试已在各构建 job 中内联完成（每个 Python 版本构建后直接安装并跑 testing_rspandas1/2.py），
+  # 测试已在各构建 job 中内联完成（每个 Python 版本构建后直接安装并跑 testing_rsdata1/2.py），
   # 无需单独的 test job。
 
   publish:

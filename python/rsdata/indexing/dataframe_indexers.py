@@ -1,6 +1,6 @@
 """DataFrame 索引器 (Loc/ILoc/Iat/At)
 
-由 rspandas/dataframe.py 拆分而来。
+由 rsdata/dataframe.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -271,7 +271,7 @@ class _LocIndexer(_IndexerBase):
             self._df._reload_inplace(new_data)
         elif isinstance(col_key, list) and all(isinstance(x, str) for x in col_key):
             # df.loc[:, ["a", "b"]] = value  (对指定列列表赋值，保留原 dtype)
-            # pandas 行为：loc 赋值会尽量适配现有 dtype，不改变列的 dtype
+            # 主流库 行为：loc 赋值会尽量适配现有 dtype，不改变列的 dtype
             # value 可以是 DataFrame（按位置取列）或标量/列表
             if isinstance(value, DataFrame):
                 value_cols = value._columns
@@ -621,6 +621,6 @@ class _LazyProxy:
 
 # 安装懒加载代理
 if "Series" not in globals() or not callable(globals().get("Series", None)):
-    Series = _LazyProxy("rspandas.series", "Series")
+    Series = _LazyProxy("rsdata.series", "Series")
 if "DataFrame" not in globals() or not callable(globals().get("DataFrame", None)):
-    DataFrame = _LazyProxy("rspandas.dataframe", "DataFrame")
+    DataFrame = _LazyProxy("rsdata.dataframe", "DataFrame")

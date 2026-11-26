@@ -2,7 +2,7 @@ import time
 start_time = time.time()
 from functools import partial  # noqa: E402
 import datetime  # noqa: E402
-import numpy as np  # noqa: E402
+import rsarray as np  # noqa: E402
 from collections import namedtuple  # noqa: E402
 from dataclasses import make_dataclass  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -163,8 +163,8 @@ print_series(87, pd.DataFrame(np.random.randn(3, 12)))
 datafile = {
     "filename": ["filename_01", "filename_02"],
     "path": [
-        "./testing/rspandas/filename_01",
-        "./testing/rspandas/filename_02",
+        "./testing/rsdata/filename_01",
+        "./testing/rsdata/filename_02",
     ],
 }
 pd.set_option("display.max_colwidth", 30)

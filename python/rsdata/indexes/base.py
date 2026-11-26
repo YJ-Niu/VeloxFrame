@@ -1,12 +1,12 @@
 """高级索引类型: Index / RangeIndex / MultiIndex 等 (v1.3.0)。
 
-提供与 pandas 兼容的索引类型，包括 Index/RangeIndex/MultiIndex/
+提供与 主流库 兼容的索引类型，包括 Index/RangeIndex/MultiIndex/
 IntervalIndex/CategoricalIndex/DatetimeIndex/TimedeltaIndex/PeriodIndex。
 """
 
 from __future__ import annotations
 
-from ..rspandas import _DataFrame as rspandas_DataFrame  # type: ignore
+from ..rsdata import _DataFrame as rsdata_DataFrame  # type: ignore
 from ..series import Series
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union
@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 
 class Index:
-    """不可变的一维标签数组，与 pandas.Index 对齐。
+    """不可变的一维标签数组，与 Index 对齐。
 
     Examples:
         >>> idx = Index([1, 2, 3])
@@ -122,7 +122,7 @@ class Index:
                 ):
                     data_strs.append(repr(v.strftime("%Y-%m-%d")))
                 else:
-                    # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+                    # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
                     data_strs.append(repr(v.isoformat().replace("T", " ", 1)))
             else:
                 data_strs.append(repr(v))
@@ -147,7 +147,7 @@ class Index:
             if isinstance(key, int):
                 return result
             return Index(result, name=self._name)
-        # bool Series: 布尔索引过滤（与 pandas 行为一致）
+        # bool Series: 布尔索引过滤（与 主流库 行为一致）
         if isinstance(key, Series):
             mask = key.values
             return Index([v for v, m in zip(self._data, mask) if m], name=self._name)
@@ -332,7 +332,7 @@ class Index:
 
     def union(self, other) -> "Index":
         other_data = other._data if hasattr(other, "_data") else list(other)
-        # 合并后利用 dict.fromkeys 保序去重（与 pandas union 语义一致）
+        # 合并后利用 dict.fromkeys 保序去重（与 主流库 union 语义一致）
         merged = list(self._data) + list(other_data)
         return Index(list(dict.fromkeys(merged)))
 
@@ -472,8 +472,8 @@ class Index:
         return all(bool(v) for v in self._data)
 
     def to_numpy(self):
-        """转换为 rsnumpy 数组。"""
-        import rsnumpy as rnp
+        """转换为 rsarray 数组。"""
+        import rsarray as rnp
 
         return rnp.array(self._data)
 
@@ -573,8 +573,8 @@ class Index:
 
     @property
     def array(self):
-        """返回底层 rsnumpy ndarray（与 pandas Index.array 行为一致，返回 NumpyExtensionArray）。"""
-        import rsnumpy as rnp
+        """返回底层 rsarray ndarray（与 主流库 Index.array 行为一致，返回 ExtensionArray）。"""
+        import rsarray as rnp
 
         return rnp.array(self._data)
 
@@ -585,7 +585,7 @@ class Index:
 
 
 class RangeIndex(Index):
-    """优化的范围索引，类似 pandas.RangeIndex。
+    """优化的范围索引，类似 RangeIndex。
 
     Examples:
         >>> ri = RangeIndex(5)
@@ -733,7 +733,7 @@ class RangeIndex(Index):
 
 
 class MultiIndex(Index):
-    """多级索引，类似 pandas.MultiIndex。
+    """多级索引，类似 MultiIndex。
 
     Examples:
         >>> arrays = [['a', 'a', 'b', 'b'], [1, 2, 1, 2]]
@@ -1526,7 +1526,7 @@ class DatetimeIndex(Index):
         date_strs = []
         for v in self._data:
             if v is None:
-                # pandas: 缺失值显示为 NaT
+                # 主流库: 缺失值显示为 NaT
                 date_strs.append("NaT")
             elif isinstance(v, datetime):
                 if (
@@ -1537,11 +1537,11 @@ class DatetimeIndex(Index):
                 ):
                     date_strs.append(repr(v.strftime("%Y-%m-%d")))
                 else:
-                    # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+                    # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
                     date_strs.append(repr(v.isoformat().replace("T", " ", 1)))
             else:
                 date_strs.append(repr(v))
-        # 多行显示（每行最多 4 个值，对齐 pandas 行为）
+        # 多行显示（每行最多 4 个值，对齐 主流库 行为）
         items_per_line = 4
         name = f", name='{self._name}'" if self._name else ""
         freq_str = f", freq='{self._freq}'" if self._freq else ""
@@ -1551,7 +1551,7 @@ class DatetimeIndex(Index):
             return f"DatetimeIndex([{joined}{suffix}"
         # 多行模式
         lines = []
-        indent = " " * 15  # 对齐 pandas 的缩进
+        indent = " " * 15  # 对齐 主流库 的缩进
         n = len(date_strs)
         for i in range(0, n, items_per_line):
             chunk = date_strs[i : i + items_per_line]  # noqa
@@ -1805,10 +1805,10 @@ class TimedeltaIndex(Index):
         )
 
     def __repr__(self) -> str:
-        # 格式化每个 timedelta 为 'N days HH:MM:SS.ffffff'（对齐 pandas 显示）
+        # 格式化每个 timedelta 为 'N days HH:MM:SS.ffffff'（对齐 主流库 显示）
         def _fmt_td(v):
             if v is None:
-                # pandas: 缺失值显示为 NaT
+                # 主流库: 缺失值显示为 NaT
                 return "NaT"
             if not isinstance(v, timedelta):
                 return repr(v)

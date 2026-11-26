@@ -14,10 +14,10 @@ sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
 rm -f pyproject.toml.bak
 echo "  -> pyproject.toml version updated to $VERSION"
 
-# ========== 同步版本到 python/rspandas/__init__.py ==========
-sed -i.bak "s/^__version__ = \".*\"/__version__ = \"$VERSION\"/" python/rspandas/__init__.py 2>/dev/null || true
-rm -f python/rspandas/__init__.py.bak
-echo "  -> python/rspandas/__init__.py version updated to $VERSION"
+# ========== 同步版本到 python/rsdata/__init__.py ==========
+sed -i.bak "s/^__version__ = \".*\"/__version__ = \"$VERSION\"/" python/rsdata/__init__.py 2>/dev/null || true
+rm -f python/rsdata/__init__.py.bak
+echo "  -> python/rsdata/__init__.py version updated to $VERSION"
 
 
 # ========== 检查 cargo 是否可用（maturin 构建需要） ==========

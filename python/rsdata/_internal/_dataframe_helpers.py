@@ -1,6 +1,6 @@
 """DataFrame 内部辅助函数
 
-由 rspandas/dataframe.py 拆分而来。
+由 rsdata/dataframe.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -8,13 +8,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-import rsnumpy as rnp
+import rsarray as rnp
 
-from ..rspandas import _Series as _PySeries  # type: ignore
+from ..rsdata import _Series as _PySeries  # type: ignore
 
 
 def _is_ndarray(data: Any) -> bool:
-    """检查对象是否为 rsnumpy ndarray。"""
+    """检查对象是否为 rsarray ndarray。"""
     return isinstance(data, rnp.ndarray)
 
 
@@ -31,7 +31,7 @@ def _convert_to_basic(v: Any) -> Any:
         dt = v._dt
         if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and dt.microsecond == 0:
             return dt.strftime("%Y-%m-%d")
-        # 用空格替代 ISO 默认的 'T'，与 pandas 显示一致
+        # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
         return dt.isoformat().replace("T", " ", 1)
     # datetime -> ISO 字符串（去除时间部分如果为 00:00:00，用空格替代 'T'）
     if isinstance(v, datetime):
@@ -41,13 +41,13 @@ def _convert_to_basic(v: Any) -> Any:
     # date -> ISO 字符串
     if hasattr(v, "isoformat"):
         return v.isoformat().replace("T", " ", 1)
-    # numpy 标量 -> Python 标量
+    # rsarray 标量 -> Python 标量
     if hasattr(v, "item"):
         # 多元素数组无法调用无参 item()，转换为 list
         if hasattr(v, "size") and v.size > 1:
             return list(v)
         return v.item()
-    # timedelta -> 'N days HH:MM:SS.ffffff' 格式（对齐 pandas 显示）
+    # timedelta -> 'N days HH:MM:SS.ffffff' 格式（对齐 主流库 显示）
     if isinstance(v, timedelta):
         days = v.days
         total_sec = v.seconds
@@ -60,7 +60,7 @@ def _convert_to_basic(v: Any) -> Any:
         if hours == 0 and minutes == 0 and secs == 0:
             return f"{days} days"
         return f"{days} days {hours:02d}:{minutes:02d}:{secs:02d}"
-    # rspandas.Timedelta 对象
+    # rsdata.Timedelta 对象
     if hasattr(v, "_td") and isinstance(getattr(v, "_td", None), timedelta):
         return _convert_to_basic(v._td)
     # 其他可转换对象 -> str
@@ -270,7 +270,7 @@ def _to_pylist_columns(data: Any, columns: Optional[List[str]]) -> Dict[str, lis
         return {columns[0]: list(data)}
 
     if _is_ndarray(data):
-        # rsnumpy ndarray: 转换为 list[list] 后按列组织
+        # rsarray ndarray: 转换为 list[list] 后按列组织
         raw_list = data.tolist()
         if not isinstance(raw_list, list):
             # 0 维数组
