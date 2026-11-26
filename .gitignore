@@ -19,7 +19,7 @@ test_*.py
 .venv/
 venv/
 uv.lock
-
+.atomcode/
 # IDE
 .vscode/
 .idea/
