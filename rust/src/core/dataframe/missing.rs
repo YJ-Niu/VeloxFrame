@@ -78,6 +78,75 @@ impl DataFrame {
         }
     }
 
+    /// 标量填充所有列：依据每列 dtype 自动选择 fillna_xxx，单次并行遍历。
+    ///
+    /// 与连续调用 fillna_all_i64 / fillna_all_f64 / fillna_all_string 不同，
+    /// 本方法只遍历 columns 一次，且每列按自身 dtype 选择填充策略。
+    /// 标量值预先 extract 为 4 个候选类型（i64/f64/bool/str），
+    /// 每列只取与自身 dtype 匹配的候选，避免每列重复 extract Python 对象。
+    /// 无法匹配的列保持原样（与 Series.fillna Rust 实现一致）。
+    pub fn fillna_scalar(
+        &self,
+        v_i64: Option<i64>,
+        v_f64: Option<f64>,
+        v_bool: Option<bool>,
+        v_str: Option<&str>,
+    ) -> DataFrame {
+        // 把字符串标量克隆为 owned，便于 'static 闭包
+        let v_str_owned: Option<String> = v_str.map(|s| s.to_string());
+        let n_data: Vec<Series> = self
+            .data
+            .par_iter()
+            .map(|s| {
+                let new_data = match &s.data {
+                    // Int 列：优先用 i64 标量；其他类型不匹配，保持原样
+                    ColumnData::Int(_) => v_i64.map_or(s.data.clone(), |v| s.fillna_i64(v).data),
+                    // Float 列：优先用 f64 标量；i64 标量可转 f64
+                    ColumnData::Float(_) => v_f64.map_or_else(
+                        || v_i64.map_or(s.data.clone(), |v| s.fillna_f64(v as f64).data),
+                        |v| s.fillna_f64(v).data,
+                    ),
+                    // Bool 列：仅接受 bool 标量，其他保持原样
+                    ColumnData::Bool(_) => v_bool.map_or(s.data.clone(), |v| s.fillna_bool(v).data),
+                    // String 列：优先 str；其他标量转字符串后填充
+                    ColumnData::String(_) => {
+                        if let Some(v) = &v_str_owned {
+                            s.fillna_string(v).data
+                        } else if let Some(v) = v_i64 {
+                            s.fillna_string(&v.to_string()).data
+                        } else if let Some(v) = v_f64 {
+                            s.fillna_string(&v.to_string()).data
+                        } else if let Some(v) = v_bool {
+                            s.fillna_string(&v.to_string()).data
+                        } else {
+                            s.data.clone()
+                        }
+                    }
+                    // Categorical 列：把标量转字符串后填充（fillna_categorical）
+                    ColumnData::Categorical(_) => {
+                        let s_val: Option<String> = v_str_owned
+                            .clone()
+                            .or_else(|| v_i64.map(|v| v.to_string()))
+                            .or_else(|| v_f64.map(|v| v.to_string()))
+                            .or_else(|| v_bool.map(|v| v.to_string()));
+                        match s_val {
+                            Some(v) => s.fillna_categorical(&v).data,
+                            None => s.data.clone(),
+                        }
+                    }
+                };
+                Series {
+                    name: s.name.clone(),
+                    data: new_data,
+                }
+            })
+            .collect();
+        DataFrame {
+            columns: self.columns.clone(),
+            data: n_data,
+        }
+    }
+
     /// 所有列并行前向填充 (ffill)
     pub fn par_ffill_all(&self) -> DataFrame {
         let n_data: Vec<Series> = self.data.par_iter().map(|s| s.ffill()).collect();

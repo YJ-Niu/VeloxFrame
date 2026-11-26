@@ -122,7 +122,7 @@ impl Series {
                     }
                 }
                 "std" => {
-                    // 默认 ddof=1（与 pandas 一致）
+                    // 默认 ddof=1（与 主流库 一致）
                     if cnt < 2 {
                         None
                     } else {
@@ -132,7 +132,7 @@ impl Series {
                     }
                 }
                 "var" => {
-                    // 默认 ddof=1（与 pandas 一致）
+                    // 默认 ddof=1（与 主流库 一致）
                     if cnt < 2 {
                         None
                     } else {

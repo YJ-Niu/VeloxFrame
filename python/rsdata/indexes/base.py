@@ -1,0 +1,2042 @@
+"""高级索引类型: Index / RangeIndex / MultiIndex 等 (v1.3.0)。
+
+提供与 主流库 兼容的索引类型，包括 Index/RangeIndex/MultiIndex/
+IntervalIndex/CategoricalIndex/DatetimeIndex/TimedeltaIndex/PeriodIndex。
+"""
+
+from __future__ import annotations
+
+from ..rsdata import _DataFrame as rsdata_DataFrame  # type: ignore
+from ..series import Series
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple, Union
+
+# ============================================================================
+# Index
+# ============================================================================
+
+
+class Index:
+    """不可变的一维标签数组，与 Index 对齐。
+
+    Examples:
+        >>> idx = Index([1, 2, 3])
+        >>> len(idx)
+        3
+        >>> 2 in idx
+        True
+    """
+
+    def __init__(self, data=None, name: Optional[str] = None):
+        if data is None:
+            self._data: list = []
+        elif isinstance(data, Index):
+            self._data = list(data._data)
+        elif isinstance(data, (list, tuple)):
+            self._data = list(data)
+        else:
+            self._data = list(data)
+        self._name = name
+
+    # ---------- 属性 ----------
+
+    @property
+    def name(self) -> Optional[str]:
+        return self._name
+
+    @name.setter
+    def name(self, value: Optional[str]):
+        self._name = value
+
+    @property
+    def values(self) -> list:
+        return list(self._data)
+
+    @property
+    def dtype(self) -> str:
+        if not self._data:
+            return "object"
+        non_null = [v for v in self._data if v is not None]
+        if not non_null:
+            return "object"
+        if all(isinstance(v, bool) for v in non_null):
+            return "bool"
+        if all(isinstance(v, int) for v in non_null):
+            return "int64"
+        if all(isinstance(v, float) for v in non_null):
+            return "float64"
+        if all(isinstance(v, str) for v in non_null):
+            return "str"
+        return "object"
+
+    @property
+    def shape(self) -> Tuple[int]:
+        return (len(self._data),)
+
+    @property
+    def size(self) -> int:
+        return len(self._data)
+
+    @property
+    def empty(self) -> bool:
+        return len(self._data) == 0
+
+    @property
+    def is_unique(self) -> bool:
+        return len(set(self._data)) == len(self._data)
+
+    @property
+    def is_monotonic_increasing(self) -> bool:
+        # 使用 all() + 生成器表达式替代显式 for 循环
+        return all(
+            not (a is not None and b is not None and b < a)
+            for a, b in zip(self._data, self._data[1:])
+        )
+
+    @property
+    def is_monotonic_decreasing(self) -> bool:
+        # 使用 all() + 生成器表达式替代显式 for 循环
+        return all(
+            not (a is not None and b is not None and b > a)
+            for a, b in zip(self._data, self._data[1:])
+        )
+
+    # ---------- dunder ----------
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        name = f", name='{self._name}'" if self._name else ""
+        # 格式化 datetime 值
+        from datetime import datetime
+
+        data_strs = []
+        for v in self._data:
+            if isinstance(v, datetime):
+                if (
+                    v.hour == 0
+                    and v.minute == 0
+                    and v.second == 0
+                    and v.microsecond == 0
+                ):
+                    data_strs.append(repr(v.strftime("%Y-%m-%d")))
+                else:
+                    # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
+                    data_strs.append(repr(v.isoformat().replace("T", " ", 1)))
+            else:
+                data_strs.append(repr(v))
+        if len(data_strs) <= 6:
+            joined = ", ".join(data_strs)
+        else:
+            joined = ", ".join(data_strs[:4]) + ", ..."
+            extra = data_strs[4:]
+            if extra:
+                joined += ", ".join(extra)
+        return f"Index([{joined}], dtype='{self.dtype}'{name})"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __getitem__(self, key):
+        if isinstance(key, (int, slice)):
+            result = self._data[key]
+            if isinstance(key, int):
+                return result
+            return Index(result, name=self._name)
+        # bool Series: 布尔索引过滤（与 主流库 行为一致）
+        if isinstance(key, Series):
+            mask = key.values
+            return Index([v for v, m in zip(self._data, mask) if m], name=self._name)
+        # bool list: 布尔索引过滤
+        if isinstance(key, list) and key and all(isinstance(x, bool) for x in key):
+            return Index([v for v, m in zip(self._data, key) if m], name=self._name)
+        if isinstance(key, (list, tuple)):
+            return Index([self._data[i] for i in key], name=self._name)
+        raise TypeError(f"Index key must be int/slice/list, not {type(key).__name__}")
+
+    def __contains__(self, item) -> bool:
+        return item in self._data
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Index):
+            return self._data == other._data
+        return False
+
+    # ---------- 算术运算 ----------
+
+    def _binary_op(self, other, op):
+        """对每个元素应用二元运算，返回新 Index。
+
+        :param other: 标量 / list / Index
+        :param op: 二元函数 (a, b) -> result
+        """
+        if isinstance(other, Index):
+            other_vals = other._data
+        elif isinstance(other, (list, tuple)):
+            other_vals = list(other)
+        else:
+            other_vals = None
+        if other_vals is not None:
+            if len(other_vals) != len(self._data):
+                raise ValueError(
+                    f"operands could not be broadcast together with shapes "
+                    f"({len(self._data)},) ({len(other_vals)},)"
+                )
+            result = [op(a, b) for a, b in zip(self._data, other_vals)]
+        else:
+            result = [op(a, other) for a in self._data]
+        return Index(result, name=self._name)
+
+    def _binary_rop(self, other, op):
+        """反向二元运算（other op self）。"""
+        if isinstance(other, Index):
+            other_vals = other._data
+        elif isinstance(other, (list, tuple)):
+            other_vals = list(other)
+        else:
+            other_vals = None
+        if other_vals is not None:
+            if len(other_vals) != len(self._data):
+                raise ValueError(
+                    f"operands could not be broadcast together with shapes "
+                    f"({len(other_vals)},) ({len(self._data)},)"
+                )
+            result = [op(a, b) for a, b in zip(other_vals, self._data)]
+        else:
+            result = [op(other, a) for a in self._data]
+        return Index(result, name=self._name)
+
+    def __add__(self, other):
+        return self._binary_op(other, lambda a, b: a + b)
+
+    def __radd__(self, other):
+        return self._binary_rop(other, lambda a, b: a + b)
+
+    def __sub__(self, other):
+        return self._binary_op(other, lambda a, b: a - b)
+
+    def __rsub__(self, other):
+        return self._binary_rop(other, lambda a, b: a - b)
+
+    def __mul__(self, other):
+        return self._binary_op(other, lambda a, b: a * b)
+
+    def __rmul__(self, other):
+        return self._binary_rop(other, lambda a, b: a * b)
+
+    def __truediv__(self, other):
+        return self._binary_op(other, lambda a, b: a / b)
+
+    def __rtruediv__(self, other):
+        return self._binary_rop(other, lambda a, b: a / b)
+
+    def __floordiv__(self, other):
+        return self._binary_op(other, lambda a, b: a // b)
+
+    def __rfloordiv__(self, other):
+        return self._binary_rop(other, lambda a, b: a // b)
+
+    def __mod__(self, other):
+        return self._binary_op(other, lambda a, b: a % b)
+
+    def __rmod__(self, other):
+        return self._binary_rop(other, lambda a, b: a % b)
+
+    def __pow__(self, other):
+        return self._binary_op(other, lambda a, b: a**b)
+
+    def __rpow__(self, other):
+        return self._binary_rop(other, lambda a, b: a**b)
+
+    def __divmod__(self, other):
+        """返回 (商 Index, 余数 Index)，与 Python divmod 语义一致。"""
+        if isinstance(other, Index):
+            other_vals = other._data
+            if len(other_vals) != len(self._data):
+                raise ValueError(
+                    f"operands could not be broadcast together with shapes "
+                    f"({len(self._data)},) ({len(other_vals)},)"
+                )
+            pairs = [divmod(a, b) for a, b in zip(self._data, other_vals)]
+        elif isinstance(other, (list, tuple)):
+            other_vals = list(other)
+            if len(other_vals) != len(self._data):
+                raise ValueError(
+                    f"operands could not be broadcast together with shapes "
+                    f"({len(self._data)},) ({len(other_vals)},)"
+                )
+            pairs = [divmod(a, b) for a, b in zip(self._data, other_vals)]
+        else:
+            pairs = [divmod(a, other) for a in self._data]
+        quot = [p[0] for p in pairs]
+        rem = [p[1] for p in pairs]
+        return Index(quot, name=self._name), Index(rem, name=self._name)
+
+    def __rdivmod__(self, other):
+        """反向 divmod：divmod(other, self)。"""
+        if isinstance(other, Index):
+            other_vals = other._data
+            if len(other_vals) != len(self._data):
+                raise ValueError(
+                    f"operands could not be broadcast together with shapes "
+                    f"({len(other_vals)},) ({len(self._data)},)"
+                )
+            pairs = [divmod(a, b) for a, b in zip(other_vals, self._data)]
+        elif isinstance(other, (list, tuple)):
+            other_vals = list(other)
+            if len(other_vals) != len(self._data):
+                raise ValueError(
+                    f"operands could not be broadcast together with shapes "
+                    f"({len(other_vals)},) ({len(self._data)},)"
+                )
+            pairs = [divmod(a, b) for a, b in zip(other_vals, self._data)]
+        else:
+            pairs = [divmod(other, a) for a in self._data]
+        quot = [p[0] for p in pairs]
+        rem = [p[1] for p in pairs]
+        return Index(quot, name=self._name), Index(rem, name=self._name)
+
+    # ---------- 方法 ----------
+
+    def tolist(self) -> list:
+        return list(self._data)
+
+    def to_list(self) -> list:
+        return self.tolist()
+
+    def get_loc(self, key) -> int:
+        """返回 key 在 Index 中的位置。"""
+        try:
+            return self._data.index(key)
+        except ValueError:
+            raise KeyError(key)
+
+    def append(self, other) -> "Index":
+        other_data = other._data if hasattr(other, "_data") else list(other)
+        return Index(self._data + list(other_data), name=self._name)
+
+    def difference(self, other) -> "Index":
+        other_data = other._data if hasattr(other, "_data") else list(other)
+        other_set = set(other_data)
+        return Index([v for v in self._data if v not in other_set])
+
+    def intersection(self, other) -> "Index":
+        other_data = other._data if hasattr(other, "_data") else list(other)
+        other_set = set(other_data)
+        # 使用 dict.fromkeys 保留首次出现顺序并去重
+        return Index([v for v in dict.fromkeys(self._data) if v in other_set])
+
+    def union(self, other) -> "Index":
+        other_data = other._data if hasattr(other, "_data") else list(other)
+        # 合并后利用 dict.fromkeys 保序去重（与 主流库 union 语义一致）
+        merged = list(self._data) + list(other_data)
+        return Index(list(dict.fromkeys(merged)))
+
+    def unique(self) -> "Index":
+        # 使用 dict.fromkeys 保留首次出现顺序并去重
+        return Index(list(dict.fromkeys(self._data)))
+
+    def sort_values(self, ascending: bool = True) -> "Index":
+        sorted_data = sorted(
+            [v for v in self._data if v is not None],
+            reverse=not ascending,
+        )
+        return Index(sorted_data, name=self._name)
+
+    def astype(self, dtype: str) -> "Index":
+        """转换 Index 类型。"""
+        result = list(self._data)
+        if dtype in ("int64", "int"):
+            result = [int(v) if v is not None else None for v in result]
+        elif dtype in ("float64", "float"):
+            result = [float(v) if v is not None else None for v in result]
+        elif dtype in ("str", "object", "string"):
+            result = [str(v) if v is not None else None for v in result]
+        return Index(result, name=self._name)
+
+    def rename(self, name: str) -> "Index":
+        return Index(self._data, name=name)
+
+    def fillna(self, value) -> "Index":
+        return Index(
+            [v if v is not None else value for v in self._data], name=self._name
+        )
+
+    def dropna(self) -> "Index":
+        return Index([v for v in self._data if v is not None], name=self._name)
+
+    def isin(self, values) -> list:
+        val_set = set(values)
+        return [v in val_set for v in self._data]
+
+    def min(self):
+        non_null = [v for v in self._data if v is not None]
+        return min(non_null) if non_null else None
+
+    def max(self):
+        non_null = [v for v in self._data if v is not None]
+        return max(non_null) if non_null else None
+
+    def argmin(self) -> int:
+        non_null = [(i, v) for i, v in enumerate(self._data) if v is not None]
+        if not non_null:
+            raise ValueError("empty index")
+        return min(non_null, key=lambda x: x[1])[0]
+
+    def argmax(self) -> int:
+        non_null = [(i, v) for i, v in enumerate(self._data) if v is not None]
+        if not non_null:
+            raise ValueError("empty index")
+        return max(non_null, key=lambda x: x[1])[0]
+
+    def duplicated(self, keep: str = "first") -> list:
+        seen: set = set()
+        if keep == "last":
+            # 反向遍历检测重复，再反转结果
+            reversed_flags = [
+                v in seen or (seen.add(v) or False) for v in reversed(self._data)
+            ]
+            return list(reversed(reversed_flags))
+        # 默认 keep='first': 从前往后，首次出现标记为 False
+        return [v in seen or (seen.add(v) or False) for v in self._data]
+
+    def copy(self) -> "Index":
+        return Index(self._data, name=self._name)
+
+    # ---------- v2.0.0: Index 扩展 ----------
+
+    def map(self, mapper) -> "Index":
+        """对索引中的每个值应用映射函数。
+
+        :param mapper: dict 或 callable
+        """
+        if callable(mapper):
+            new_data = [mapper(v) for v in self._data]
+        elif isinstance(mapper, dict):
+            new_data = [mapper.get(v, v) for v in self._data]
+        else:
+            raise TypeError("mapper must be a dict or callable")
+        return Index(new_data, name=self._name)
+
+    def where(self, cond: list) -> "Index":
+        """条件筛选，不满足条件的替换为 None。
+
+        :param cond: bool 列表
+        """
+        new_data = [
+            v if i < len(cond) and cond[i] else None for i, v in enumerate(self._data)
+        ]
+        return Index(new_data, name=self._name)
+
+    def mask(self, cond: list) -> "Index":
+        """条件筛选，满足条件的替换为 None。
+
+        :param cond: bool 列表
+        """
+        new_data = [
+            None if i < len(cond) and cond[i] else v for i, v in enumerate(self._data)
+        ]
+        return Index(new_data, name=self._name)
+
+    def set_names(self, names, level=None) -> "Index":
+        """设置索引名称。
+
+        :param names: 名称或名称列表
+        """
+        if isinstance(names, (list, tuple)):
+            name = names[0] if names else None
+        else:
+            name = names
+        return Index(self._data, name=name)
+
+    def symmetric_difference(self, other: "Index") -> "Index":
+        """返回两个索引的对称差集。
+
+        :param other: 另一个 Index
+        """
+        other_set = set(other._data)
+        self_set = set(self._data)
+        result = list(self_set.symmetric_difference(other_set))
+        return Index(result)
+
+    def any(self) -> bool:
+        """返回是否所有值中存在 True。"""
+        return any(bool(v) for v in self._data)
+
+    def all(self) -> bool:
+        """返回是否所有值都为 True。"""
+        return all(bool(v) for v in self._data)
+
+    def to_numpy(self):
+        """转换为 rsarray 数组。"""
+        import rsarray as rnp
+
+        return rnp.array(self._data)
+
+    def to_frame(self, index: bool = True, name: Optional[str] = None):
+        """转换为 DataFrame。"""
+        from ..dataframe import DataFrame
+
+        col_name = name or self._name or "index"
+        df = DataFrame({col_name: self._data})
+        if not index:
+            df._index = list(range(len(self._data)))
+        return df
+
+    # ---------- v2.1.0: Index 补全方法 ----------
+
+    def equals(self, other) -> bool:
+        """判断两个 Index 是否相等（值和类型都相同）。"""
+        if not isinstance(other, Index):
+            return False
+        if len(self) != len(other):
+            return False
+        return all(a == b for a, b in zip(self._data, other._data))
+
+    def identical(self, other) -> bool:
+        """判断两个 Index 是否完全相同（值、名称、类型都相同）。"""
+        if not isinstance(other, Index):
+            return False
+        if self.name != other.name:
+            return False
+        return self.equals(other)
+
+    @property
+    def hasnans(self) -> bool:
+        """是否有缺失值。"""
+        return any(v is None for v in self._data)
+
+    @property
+    def nbytes(self) -> int:
+        """内存占用字节数（粗略估算）。"""
+        return len(self._data) * 8  # 假设每个元素 8 字节
+
+    def item(self):
+        """如果 Index 只有一个元素，返回该元素；否则抛出 ValueError。"""
+        if len(self._data) == 1:
+            return self._data[0]
+        raise ValueError("can only convert an array of size 1 to a Python scalar")
+
+    def to_series(self):
+        """转为 Series。"""
+        from ..series import Series
+
+        return Series(list(self._data), name=self.name, index=list(self._data))
+
+    def delete(self, loc):
+        """删除指定位置的元素，返回新 Index。"""
+        if isinstance(loc, (list, tuple)):
+            new_vals = [v for i, v in enumerate(self._data) if i not in loc]
+        else:
+            new_vals = [v for i, v in enumerate(self._data) if i != loc]
+        return Index(new_vals, name=self.name)
+
+    def insert(self, loc, item):
+        """在指定位置插入元素，返回新 Index。"""
+        new_vals = list(self._data[:loc]) + [item] + list(self._data[loc:])
+        return Index(new_vals, name=self.name)
+
+    def drop(self, labels, errors: str = "raise"):
+        """删除指定标签，返回新 Index。"""
+        if errors not in ("raise", "ignore"):
+            raise ValueError("errors must be 'raise' or 'ignore'")
+        if isinstance(labels, (list, tuple)):
+            labels_set = set(labels)
+        else:
+            labels_set = {labels}
+        missing = labels_set - set(self._data)
+        if missing and errors == "raise":
+            raise KeyError(f"labels {missing} not found in index")
+        new_vals = [v for v in self._data if v not in labels_set]
+        return Index(new_vals, name=self.name)
+
+    def droplevel(self, level=0):
+        """删除指定层级（对 MultiIndex 有效，普通 Index 直接返回副本）。"""
+        return Index(list(self._data), name=self.name)
+
+    def ravel(self):
+        """展平（1D 本身已展平，直接返回值的列表）。"""
+        return list(self._data)
+
+    @property
+    def T(self):
+        """转置（1D 的转置就是自身）。"""
+        return self
+
+    def transpose(self):
+        """转置（1D 的转置就是自身）。"""
+        return self
+
+    @property
+    def array(self):
+        """返回底层 rsarray ndarray（与 主流库 Index.array 行为一致，返回 ExtensionArray）。"""
+        import rsarray as rnp
+
+        return rnp.array(self._data)
+
+
+# ============================================================================
+# RangeIndex
+# ============================================================================
+
+
+class RangeIndex(Index):
+    """优化的范围索引，类似 RangeIndex。
+
+    Examples:
+        >>> ri = RangeIndex(5)
+        >>> len(ri)
+        5
+        >>> list(ri)
+        [0, 1, 2, 3, 4]
+        >>> ri = RangeIndex(1, 10, 2)
+        >>> list(ri)
+        [1, 3, 5, 7, 9]
+    """
+
+    def __init__(self, start=0, stop=None, step=1, name: Optional[str] = None):
+        if stop is None:
+            stop = start
+            start = 0
+        self._start = start
+        self._stop = stop
+        self._step = step
+        self._name = name
+
+    @property
+    def start(self) -> int:
+        return self._start
+
+    @property
+    def stop(self) -> int:
+        return self._stop
+
+    @property
+    def step(self) -> int:
+        return self._step
+
+    # ---------- 重写 Index 方法 ----------
+
+    def __len__(self) -> int:
+        if self._step > 0:
+            return max(0, (self._stop - self._start + self._step - 1) // self._step)
+        return max(
+            0, (self._start - self._stop + abs(self._step) - 1) // abs(self._step)
+        )
+
+    def __repr__(self) -> str:
+        name = f", name='{self._name}'" if self._name else ""
+        return (
+            f"RangeIndex(start={self._start}, stop={self._stop}, "
+            f"step={self._step}{name})"
+        )
+
+    def __iter__(self):
+        return iter(range(self._start, self._stop, self._step))
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            if key < 0:
+                key += len(self)
+            if key < 0 or key >= len(self):
+                raise IndexError("RangeIndex index out of range")
+            return self._start + key * self._step
+        if isinstance(key, slice):
+            start, stop, step = key.indices(len(self))
+            new_start = self._start + start * self._step
+            new_stop = self._start + stop * self._step
+            new_step = self._step * step
+            return RangeIndex(new_start, new_stop, new_step, name=self._name)
+        if isinstance(key, (list, tuple)):
+            return Index([self._start + k * self._step for k in key], name=self._name)
+        raise TypeError("RangeIndex key must be int/slice/list")
+
+    def __contains__(self, item) -> bool:
+        if not isinstance(item, int):
+            return False
+        if self._step > 0:
+            return (
+                self._start <= item < self._stop
+                and (item - self._start) % self._step == 0
+            )
+        return (
+            self._stop < item <= self._start and (item - self._start) % self._step == 0
+        )
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, RangeIndex):
+            return (
+                self._start == other._start
+                and self._stop == other._stop
+                and self._step == other._step
+            )
+        return False
+
+    # ---------- 方法 ----------
+
+    def tolist(self) -> list:
+        return list(range(self._start, self._stop, self._step))
+
+    def to_list(self) -> list:
+        return self.tolist()
+
+    def get_loc(self, key) -> int:
+        if not isinstance(key, int):
+            raise KeyError(key)
+        if key not in self:
+            raise KeyError(key)
+        return (key - self._start) // self._step
+
+    @property
+    def values(self) -> list:
+        return self.tolist()
+
+    @property
+    def size(self) -> int:
+        return len(self)
+
+    @property
+    def empty(self) -> bool:
+        return len(self) == 0
+
+    @property
+    def is_unique(self) -> bool:
+        return self._step != 0 and len(self) > 0
+
+    @property
+    def is_monotonic_increasing(self) -> bool:
+        return self._step > 0
+
+    @property
+    def is_monotonic_decreasing(self) -> bool:
+        return self._step < 0
+
+    @property
+    def dtype(self) -> str:
+        return "int64"
+
+    def copy(self) -> "RangeIndex":
+        return RangeIndex(self._start, self._stop, self._step, name=self._name)
+
+    @staticmethod
+    def from_range(start: int, stop: int, step: int = 1, name=None) -> "RangeIndex":
+        return RangeIndex(start, stop, step, name=name)
+
+
+# ============================================================================
+# MultiIndex
+# ============================================================================
+
+
+class MultiIndex(Index):
+    """多级索引，类似 MultiIndex。
+
+    Examples:
+        >>> arrays = [['a', 'a', 'b', 'b'], [1, 2, 1, 2]]
+        >>> mi = MultiIndex.from_arrays(arrays, names=['first', 'second'])
+        >>> len(mi)
+        4
+        >>> mi.nlevels
+        2
+    """
+
+    def __init__(self, levels, codes, names=None):
+        self._levels = [list(level) for level in levels]
+        self._codes = [list(c) for c in codes]
+        self._names = names if names is not None else [None] * len(levels)
+        self._name = None  # MultiIndex 本身没有 name
+
+        # 验证
+        if len(self._levels) != len(self._codes):
+            raise ValueError("levels and codes must have same length")
+        n = len(self._codes[0]) if self._codes else 0
+        # 使用 any() + 生成器表达式替代显式 for 循环
+        if any(len(c) != n for c in self._codes):
+            raise ValueError("all codes must have same length")
+
+    # ---------- 属性 ----------
+
+    @property
+    def nlevels(self) -> int:
+        return len(self._levels)
+
+    @property
+    def levels(self) -> List[list]:
+        return self._levels
+
+    @property
+    def codes(self) -> List[list]:
+        return self._codes
+
+    @property
+    def names(self) -> List[Optional[str]]:
+        return self._names
+
+    @names.setter
+    def names(self, value: List[Optional[str]]):
+        if len(value) != self.nlevels:
+            raise ValueError(f"names length {len(value)} != nlevels {self.nlevels}")
+        self._names = list(value)
+
+    @property
+    def values(self) -> list:
+        return self.tolist()
+
+    @property
+    def dtype(self) -> str:
+        return "object"
+
+    @property
+    def is_unique(self) -> bool:
+        return len(set(self.tolist())) == len(self)
+
+    # ---------- dunder ----------
+
+    def __len__(self) -> int:
+        return len(self._codes[0]) if self._codes else 0
+
+    def __repr__(self) -> str:
+        names_str = (
+            f", names={self._names}" if any(n is not None for n in self._names) else ""
+        )
+        return f"MultiIndex(levels={self._levels}, codes={self._codes}{names_str})"
+
+    def __iter__(self):
+        return iter(self.tolist())
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return tuple(
+                (
+                    self._levels[level][self._codes[level][key]]
+                    if self._codes[level][key] >= 0
+                    else None
+                )
+                for level in range(self.nlevels)
+            )
+        if isinstance(key, slice):
+            indices = range(len(self))[key]
+            return self._slice_by_indices(indices)
+        if isinstance(key, (list, tuple)):
+            if all(isinstance(k, bool) for k in key):
+                return self._slice_by_indices([i for i, b in enumerate(key) if b])
+            return self._slice_by_indices(key)
+        raise TypeError("MultiIndex key must be int/slice/list")
+
+    def __contains__(self, item) -> bool:
+        return item in self.tolist()
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, MultiIndex):
+            return (
+                self._levels == other._levels
+                and self._codes == other._codes
+                and self._names == other._names
+            )
+        return False
+
+    # ---------- 构造方法 ----------
+
+    @staticmethod
+    def from_arrays(arrays, names=None) -> MultiIndex:
+        """从数组列表构造 MultiIndex。
+
+        Parameters
+        ----------
+        arrays : list[list]
+            每个 level 一个数组。
+        names : list[str], optional
+            每个 level 的名称。
+        """
+        arrays = [list(a) for a in arrays]
+        n = len(arrays[0])
+        # 使用 any() + 生成器表达式替代显式 for 循环
+        if any(len(a) != n for a in arrays):
+            raise ValueError("all arrays must have same length")
+
+        # 对每个数组构建 levels 和 codes（使用 dict.fromkeys 保序去重并构建 code 映射）
+        def _build_levels_codes(arr):
+            # 利用 dict.fromkeys 保序去重，再构建 code 映射
+            unique = list(dict.fromkeys(arr))
+            seen = {v: i for i, v in enumerate(unique)}
+            return unique, [seen[v] for v in arr]
+
+        levels_codes = [_build_levels_codes(arr) for arr in arrays]
+        levels = [lc[0] for lc in levels_codes]
+        codes = [lc[1] for lc in levels_codes]
+
+        return MultiIndex(levels, codes, names=names)
+
+    @staticmethod
+    def from_tuples(tuples, names=None) -> "MultiIndex":
+        """从 tuple 列表构造 MultiIndex。
+        Parameters
+        ----------
+        tuples : list[tuple]
+            每个元素是一个 tuple，表示一行索引。
+        names : list[str], optional
+            每个 level 的名称。
+        """
+        if not tuples:
+            return MultiIndex([], [], names=names or [])
+
+        # 使用 zip 一次性解包所有 tuple 到多个数组（替代嵌套 for 循环）
+        arrays = [list(col) for col in zip(*tuples)]
+        return MultiIndex.from_arrays(arrays, names=names)
+
+    @staticmethod
+    def from_product(iterables, names=None) -> MultiIndex:
+        """从笛卡尔积构造 MultiIndex。
+        Parameters
+        ----------
+        iterables : list[list]
+            每个 level 的可能值列表。
+        names : list[str], optional
+            每个 level 的名称。
+        """
+        iterables = [list(it) for it in iterables]
+        nlevels = len(iterables)
+
+        # 笛卡尔积
+        def _product(idx, current):
+            if idx == nlevels:
+                return [tuple(current)]
+            result = []
+            for v in iterables[idx]:
+                result.extend(_product(idx + 1, current + [v]))
+            return result
+
+        tuples = _product(0, [])
+        return MultiIndex.from_tuples(tuples, names=names)
+
+    # ---------- 方法 ----------
+
+    def tolist(self) -> list:
+        """返回 tuple 列表。"""
+        # 使用列表推导式替代显式 for 循环
+        return [self[i] for i in range(len(self))]
+
+    def to_list(self) -> list:
+        return self.tolist()
+
+    def get_loc(self, key) -> Union[int, slice]:
+        """返回 key 在 MultiIndex 中的位置。"""
+        if isinstance(key, tuple):
+            try:
+                return self.tolist().index(key)
+            except ValueError:
+                raise KeyError(key)
+        # 部分 key: 只匹配第一层 - 使用 next() + 生成器表达式查找首个匹配
+        try:
+            return next(i for i in range(len(self)) if self[i][0] == key)
+        except StopIteration:
+            raise KeyError(key)
+
+    def get_level_values(self, level: Union[int, str]) -> Index:
+        """返回指定 level 的值。
+
+        Parameters
+        ----------
+        level : int or str
+            level 索引或名称。
+
+        Returns
+        -------
+        Index
+        """
+        level_idx = self._resolve_level(level)
+        # 使用列表推导式替代显式 for 循环
+        codes_lvl = self._codes[level_idx]
+        levels_lvl = self._levels[level_idx]
+        values = [levels_lvl[c] if c >= 0 else None for c in codes_lvl]
+        return Index(values, name=self._names[level_idx])
+
+    def swaplevel(self, i: int = -2, j: int = -1) -> MultiIndex:
+        """交换两个 level。
+
+        Parameters
+        ----------
+        i, j : int
+            要交换的两个 level 索引。
+
+        Returns
+        -------
+        MultiIndex
+        """
+        i = i if i >= 0 else self.nlevels + i
+        j = j if j >= 0 else self.nlevels + j
+
+        new_levels = list(self._levels)
+        new_codes = list(self._codes)
+        new_names = list(self._names)
+
+        new_levels[i], new_levels[j] = new_levels[j], new_levels[i]
+        new_codes[i], new_codes[j] = new_codes[j], new_codes[i]
+        new_names[i], new_names[j] = new_names[j], new_names[i]
+
+        return MultiIndex(new_levels, new_codes, names=new_names)
+
+    def reorder_levels(self, order: List[int]) -> MultiIndex:
+        """重新排列 level 顺序。
+
+        Parameters
+        ----------
+        order : list[int]
+            新的 level 顺序。
+
+        Returns
+        -------
+        MultiIndex
+        """
+        new_levels = [self._levels[i] for i in order]
+        new_codes = [self._codes[i] for i in order]
+        new_names = [self._names[i] for i in order]
+        return MultiIndex(new_levels, new_codes, names=new_names)
+
+    def droplevel(self, level: Union[int, str, List[Union[int, str]]]) -> Index:
+        """删除指定 level，返回 Index 或 MultiIndex。
+
+        Parameters
+        ----------
+        level : int, str, or list
+            要删除的 level。
+
+        Returns
+        -------
+        Index or MultiIndex
+        """
+        if isinstance(level, (int, str)):
+            levels_to_drop = [level]
+        else:
+            levels_to_drop = list(level)
+
+        drop_indices = [self._resolve_level(lev) for lev in levels_to_drop]
+        keep_indices = [i for i in range(self.nlevels) if i not in drop_indices]
+
+        if len(keep_indices) == 0:
+            return Index([], name=None)
+        if len(keep_indices) == 1:
+            return self.get_level_values(keep_indices[0])
+        return self.reorder_levels(keep_indices)
+
+    def _resolve_level(self, level: Union[int, str]) -> int:
+        """将 level 名称解析为索引。"""
+        if isinstance(level, int):
+            if level < 0 or level >= self.nlevels:
+                raise IndexError(f"level {level} out of range [0, {self.nlevels})")
+            return level
+        try:
+            return self._names.index(level)
+        except ValueError:
+            raise KeyError(f"level name '{level}' not found")
+
+    def _slice_by_indices(self, indices) -> MultiIndex:
+        """按索引列表切片。"""
+        # 使用列表推导式替代显式 for 循环（外层为推导式，内层 itemgetter 批量取值）
+        from operator import itemgetter
+
+        indices_list = list(indices)
+        if len(indices_list) == 1:
+            idx = indices_list[0]
+            new_codes = [[c[idx]] for c in self._codes]
+        else:
+            getter = itemgetter(*indices_list)
+            new_codes = [list(getter(c)) for c in self._codes]
+        return MultiIndex(self._levels, new_codes, names=self._names)
+
+    def copy(self) -> MultiIndex:
+        return MultiIndex(
+            [list(level) for level in self._levels],
+            [list(c) for c in self._codes],
+            names=list(self._names),
+        )
+
+    # ---------- v2.0.0: MultiIndex 扩展 ----------
+
+    def set_levels(
+        self, levels, level=None, verify_integrity: bool = True
+    ) -> MultiIndex:
+        """设置 levels。
+
+        :param levels: 新的 levels 列表
+        :param level: 要设置的 level 索引 (None 表示全部)
+        :param verify_integrity: 是否验证完整性
+        """
+        if level is not None:
+            if isinstance(level, int):
+                new_levels = [
+                    list(self._levels[i]) if i != level else list(levels)
+                    for i in range(self.nlevels)
+                ]
+            else:
+                new_levels = [list(lev) for lev in self._levels]
+            new_names = list(self._names)
+        else:
+            new_levels = [list(lev) for lev in levels]
+            new_names = list(self._names)
+        return MultiIndex(new_levels, [list(c) for c in self._codes], names=new_names)
+
+    def set_codes(self, codes, level=None, verify_integrity: bool = True) -> MultiIndex:
+        """设置 codes。
+
+        :param codes: 新的 codes 列表
+        :param level: 要设置的 level 索引 (None 表示全部)
+        :param verify_integrity: 是否验证完整性
+        """
+        if level is not None:
+            if isinstance(level, int):
+                new_codes = [
+                    list(self._codes[i]) if i != level else list(codes)
+                    for i in range(self.nlevels)
+                ]
+            else:
+                new_codes = [list(c) for c in self._codes]
+        else:
+            new_codes = [list(c) for c in codes]
+        return MultiIndex(
+            [list(lvl) for lvl in self._levels], new_codes, names=list(self._names)
+        )
+
+
+# ============================================================================
+# IntervalIndex - 区间索引 (v2.0.0)
+# ============================================================================
+
+
+class IntervalIndex(Index):
+    """区间索引，用于存储区间（左闭右闭或左闭右开）。
+
+    Examples:
+        >>> ii = IntervalIndex.from_breaks([0, 1, 2, 3])
+        >>> len(ii)
+        3
+        >>> ii[0]
+        (0, 1)
+    """
+
+    def __init__(self, data, closed: str = "right", name: Optional[str] = None):
+        """构造 IntervalIndex。
+
+        :param data: 区间列表，每个元素为 (left, right) tuple
+        :param closed: 'left' / 'right' / 'both' / 'neither'
+        :param name: 索引名称
+        """
+        self._data = [tuple(d) if d is not None else None for d in data]
+        self._closed = closed
+        self._name = name
+
+    @property
+    def closed(self) -> str:
+        return self._closed
+
+    @property
+    def left(self) -> Index:
+        return Index([d[0] if d is not None else None for d in self._data])
+
+    @property
+    def right(self) -> Index:
+        return Index([d[1] if d is not None else None for d in self._data])
+
+    @property
+    def mid(self) -> Index:
+        return Index([(d[0] + d[1]) / 2 if d is not None else None for d in self._data])
+
+    @property
+    def length(self) -> Index:
+        return Index([d[1] - d[0] if d is not None else None for d in self._data])
+
+    @property
+    def is_empty(self) -> list:
+        return [d[0] >= d[1] if d is not None else None for d in self._data]
+
+    def __repr__(self) -> str:
+        name = f", name='{self._name}'" if self._name else ""
+        return f"IntervalIndex({self._data}, closed='{self._closed}'{name})"
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._data[key]
+        if isinstance(key, slice):
+            return IntervalIndex(self._data[key], closed=self._closed, name=self._name)
+        if isinstance(key, (list, tuple)):
+            return IntervalIndex(
+                [self._data[i] for i in key], closed=self._closed, name=self._name
+            )
+        raise TypeError(
+            f"IntervalIndex key must be int/slice/list, not {type(key).__name__}"
+        )
+
+    def __contains__(self, item) -> bool:
+        if isinstance(item, tuple) and len(item) == 2:
+            return item in self._data
+        # 单值查找: 判断属于哪个区间 - 用 any() + 生成器表达式
+        return any(self._contains_value(d, item) for d in self._data if d is not None)
+
+    def _contains_value(self, d, item) -> bool:
+        """检查单值是否在区间 d 内（按 closed 模式判断）。"""
+        if self._closed == "right":
+            return d[0] < item <= d[1]
+        elif self._closed == "left":
+            return d[0] <= item < d[1]
+        elif self._closed == "both":
+            return d[0] <= item <= d[1]
+        else:  # neither
+            return d[0] < item < d[1]
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, IntervalIndex):
+            return self._data == other._data and self._closed == other._closed
+        return False
+
+    def tolist(self) -> list:
+        return list(self._data)
+
+    def to_list(self) -> list:
+        return self.tolist()
+
+    def get_loc(self, key) -> int:
+        """返回 key 在 IntervalIndex 中的位置。"""
+        if isinstance(key, tuple) and len(key) == 2:
+            try:
+                return self._data.index(key)
+            except ValueError:
+                raise KeyError(key)
+        # 单值查找 - 使用 next() + 生成器表达式查找首个匹配
+        try:
+            return next(
+                i
+                for i, d in enumerate(self._data)
+                if d is not None and self._contains_value(d, key)
+            )
+        except StopIteration:
+            raise KeyError(key)
+
+    def contains(self, other) -> list:
+        """检查每个值是否在某个区间内。"""
+        return [v in self for v in other]
+
+    def overlaps(self, other) -> list:
+        """检查每个区间是否与另一个区间重叠。"""
+        if isinstance(other, tuple) and len(other) == 2:
+            other_itv = other
+            return [
+                self._overlaps(d, other_itv) if d is not None else None
+                for d in self._data
+            ]
+        if isinstance(other, IntervalIndex):
+            return [
+                self._overlaps(d1, d2) if d1 is not None and d2 is not None else None
+                for d1, d2 in zip(self._data, other._data)
+            ]
+        raise TypeError("overlaps requires IntervalIndex or tuple")
+
+    def _overlaps(self, a, b) -> bool:
+        if a is None or b is None:
+            return False
+        return a[0] < b[1] and b[0] < a[1]
+
+    @staticmethod
+    def from_breaks(breaks, closed: str = "right", name=None) -> IntervalIndex:
+        """从断点列表构造 IntervalIndex。
+
+        :param breaks: 断点列表 (如 [0, 1, 2, 3])
+        :param closed: 'left' / 'right' / 'both' / 'neither'
+        :param name: 索引名称
+        """
+        intervals = [(breaks[i], breaks[i + 1]) for i in range(len(breaks) - 1)]
+        return IntervalIndex(intervals, closed=closed, name=name)
+
+    @staticmethod
+    def from_arrays(left, right, closed: str = "right", name=None) -> IntervalIndex:
+        """从左右端点数组构造 IntervalIndex。
+
+        :param left: 左端点列表
+        :param right: 右端点列表
+        :param closed: 'left' / 'right' / 'both' / 'neither'
+        :param name: 索引名称
+        """
+        intervals = list(zip(left, right))
+        return IntervalIndex(intervals, closed=closed, name=name)
+
+    @staticmethod
+    def from_tuples(tuples, closed: str = "right", name=None) -> IntervalIndex:
+        """从 tuple 列表构造 IntervalIndex。
+
+        :param tuples: (left, right) tuple 列表
+        :param closed: 'left' / 'right' / 'both' / 'neither'
+        :param name: 索引名称
+        """
+        return IntervalIndex(tuples, closed=closed, name=name)
+
+
+# ============================================================================
+# CategoricalIndex - 分类索引 (v2.0.0)
+# ============================================================================
+
+
+class CategoricalIndex(Index):
+    """分类索引，用于存储有限类别。
+
+    Examples:
+        >>> ci = CategoricalIndex(['a', 'b', 'a', 'c'])
+        >>> ci.categories
+        ['a', 'b', 'c']
+        >>> ci.codes
+        [0, 1, 0, 2]
+    """
+
+    def __init__(
+        self, data, categories=None, ordered: bool = False, name: Optional[str] = None
+    ):
+        """构造 CategoricalIndex。
+
+        :param data: 数据列表
+        :param categories: 预定义类别列表 (None 则自动推断)
+        :param ordered: 是否有序
+        :param name: 索引名称
+        """
+        self._data = list(data)
+        if categories is None:
+            # 使用 dict.fromkeys 保序去重，过滤 None
+            self._categories = list(
+                dict.fromkeys(v for v in self._data if v is not None)
+            )
+        else:
+            self._categories = list(categories)
+        self._ordered = ordered
+        self._name = name
+
+        # 构建 codes（使用字典推导式构建映射，再用列表推导式生成 codes）
+        cat_to_code = {c: i for i, c in enumerate(self._categories)}
+        self._codes = [
+            cat_to_code.get(v, -1) if v is not None else -1 for v in self._data
+        ]
+
+    @property
+    def categories(self) -> list:
+        return list(self._categories)
+
+    @property
+    def codes(self) -> list:
+        return list(self._codes)
+
+    @property
+    def ordered(self) -> bool:
+        return self._ordered
+
+    def __repr__(self) -> str:
+        name = f", name='{self._name}'" if self._name else ""
+        return f"CategoricalIndex({self._data}, categories={self._categories}{name})"
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._data[key]
+        if isinstance(key, slice):
+            return CategoricalIndex(
+                self._data[key],
+                categories=self._categories,
+                ordered=self._ordered,
+                name=self._name,
+            )
+        if isinstance(key, (list, tuple)):
+            return CategoricalIndex(
+                [self._data[i] for i in key],
+                categories=self._categories,
+                ordered=self._ordered,
+                name=self._name,
+            )
+        raise TypeError(
+            f"CategoricalIndex key must be int/slice/list, not {type(key).__name__}"
+        )
+
+    def __contains__(self, item) -> bool:
+        return item in self._data
+
+    def tolist(self) -> list:
+        return list(self._data)
+
+    def to_list(self) -> list:
+        return self.tolist()
+
+    def get_loc(self, key) -> int:
+        try:
+            return self._data.index(key)
+        except ValueError:
+            raise KeyError(key)
+
+    def add_categories(self, new_categories) -> CategoricalIndex:
+        """添加新类别。"""
+        # 使用 dict.fromkeys 合并去重，保留首次出现顺序
+        new_cats = list(dict.fromkeys(list(self._categories) + list(new_categories)))
+        return CategoricalIndex(
+            self._data, categories=new_cats, ordered=self._ordered, name=self._name
+        )
+
+    def remove_unused_categories(self) -> CategoricalIndex:
+        """移除未使用的类别。"""
+        used = set(v for v in self._data if v is not None)
+        new_cats = [c for c in self._categories if c in used]
+        return CategoricalIndex(
+            self._data, categories=new_cats, ordered=self._ordered, name=self._name
+        )
+
+    def rename_categories(self, new_categories) -> CategoricalIndex:
+        """重命名类别。"""
+        if len(new_categories) != len(self._categories):
+            raise ValueError("new_categories must have same length as categories")
+        mapping = dict(zip(self._categories, new_categories))
+        new_data = [mapping.get(v, v) if v is not None else None for v in self._data]
+        return CategoricalIndex(
+            new_data,
+            categories=list(new_categories),
+            ordered=self._ordered,
+            name=self._name,
+        )
+
+    def as_ordered(self) -> CategoricalIndex:
+        return CategoricalIndex(
+            self._data, categories=self._categories, ordered=True, name=self._name
+        )
+
+    def as_unordered(self) -> CategoricalIndex:
+        return CategoricalIndex(
+            self._data, categories=self._categories, ordered=False, name=self._name
+        )
+
+
+# ============================================================================
+# DatetimeIndex - 日期时间索引 (v2.0.0)
+# ============================================================================
+
+
+class DatetimeIndex(Index):
+    """日期时间索引，用于存储 datetime 值。
+
+    Examples:
+        >>> di = DatetimeIndex(['2024-01-01', '2024-01-02', '2024-01-03'])
+        >>> di.year
+        [2024, 2024, 2024]
+        >>> di.month
+        [1, 1, 1]
+    """
+
+    def __init__(self, data, name: Optional[str] = None, tz=None, freq=None):
+        """构造 DatetimeIndex。
+
+        :param data: 日期字符串列表或 datetime 对象列表
+        :param name: 索引名称
+        :param tz: 时区信息
+        :param freq: 频率字符串（如 'D', 'H'）
+        """
+
+        # 使用辅助函数 + 列表推导式替代显式 for 循环
+        def _parse_one(v):
+            if v is None:
+                return None
+            if isinstance(v, datetime):
+                return v
+            if isinstance(v, str):
+                try:
+                    return datetime.fromisoformat(v)
+                except (ValueError, TypeError):
+                    from .._datetime import _parse_iso
+
+                    return _parse_iso(v)
+            return v
+
+        self._data = [_parse_one(v) for v in data]
+        self._name = name
+        self._tz = tz
+        self._freq = freq
+
+    @property
+    def year(self) -> Index:
+        return Index([v.year if isinstance(v, datetime) else None for v in self._data])
+
+    @property
+    def month(self) -> Index:
+        return Index([v.month if isinstance(v, datetime) else None for v in self._data])
+
+    @property
+    def day(self) -> Index:
+        return Index([v.day if isinstance(v, datetime) else None for v in self._data])
+
+    @property
+    def hour(self) -> Index:
+        return Index([v.hour if isinstance(v, datetime) else None for v in self._data])
+
+    @property
+    def minute(self) -> Index:
+        return Index(
+            [v.minute if isinstance(v, datetime) else None for v in self._data]
+        )
+
+    @property
+    def second(self) -> Index:
+        return Index(
+            [v.second if isinstance(v, datetime) else None for v in self._data]
+        )
+
+    @property
+    def weekday(self) -> Index:
+        return Index(
+            [v.weekday() if isinstance(v, datetime) else None for v in self._data]
+        )
+
+    @property
+    def dayofyear(self) -> Index:
+        return Index(
+            [
+                v.timetuple().tm_yday if isinstance(v, datetime) else None
+                for v in self._data
+            ]
+        )
+
+    @property
+    def quarter(self) -> Index:
+        return Index(
+            [
+                (v.month - 1) // 3 + 1 if isinstance(v, datetime) else None
+                for v in self._data
+            ]
+        )
+
+    @property
+    def tz(self):
+        return self._tz
+
+    def __repr__(self) -> str:
+        # 格式化 date 值：显示为 '2013-01-01' 格式
+        date_strs = []
+        for v in self._data:
+            if v is None:
+                # 主流库: 缺失值显示为 NaT
+                date_strs.append("NaT")
+            elif isinstance(v, datetime):
+                if (
+                    v.hour == 0
+                    and v.minute == 0
+                    and v.second == 0
+                    and v.microsecond == 0
+                ):
+                    date_strs.append(repr(v.strftime("%Y-%m-%d")))
+                else:
+                    # 用空格替代 ISO 默认的 'T'，与 主流库 显示一致
+                    date_strs.append(repr(v.isoformat().replace("T", " ", 1)))
+            else:
+                date_strs.append(repr(v))
+        # 多行显示（每行最多 4 个值，对齐 主流库 行为）
+        items_per_line = 4
+        name = f", name='{self._name}'" if self._name else ""
+        freq_str = f", freq='{self._freq}'" if self._freq else ""
+        suffix = f"], dtype='datetime64[us]'{freq_str}{name})"
+        if len(date_strs) <= items_per_line:
+            joined = ", ".join(date_strs)
+            return f"DatetimeIndex([{joined}{suffix}"
+        # 多行模式
+        lines = []
+        indent = " " * 15  # 对齐 主流库 的缩进
+        n = len(date_strs)
+        for i in range(0, n, items_per_line):
+            chunk = date_strs[i : i + items_per_line]  # noqa
+            joined = ", ".join(chunk)
+            if i == 0:
+                line = "DatetimeIndex([" + joined + ","
+            elif i + items_per_line >= n:
+                # 最后一行：直接闭合括号
+                line = indent + joined + "],"
+            else:
+                line = indent + joined + ","
+            lines.append(line)
+        # 最后一行：dtype/freq/name 元数据
+        close_indent = " " * 14
+        lines.append(close_indent + "dtype='datetime64[us]'" + freq_str + name + ")")
+        return "\n".join(lines)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._data[key]
+        if isinstance(key, slice):
+            return DatetimeIndex(self._data[key], name=self._name, tz=self._tz)
+        if isinstance(key, (list, tuple)):
+            return DatetimeIndex(
+                [self._data[i] for i in key], name=self._name, tz=self._tz
+            )
+        raise TypeError(
+            f"DatetimeIndex key must be int/slice/list, not {type(key).__name__}"
+        )
+
+    def __contains__(self, item) -> bool:
+        return item in self._data
+
+    def tolist(self) -> list:
+        return list(self._data)
+
+    def to_list(self) -> list:
+        return self.tolist()
+
+    def get_loc(self, key) -> int:
+        # 支持字符串 key 查找
+        if isinstance(key, str):
+            try:
+                key_dt = datetime.fromisoformat(key)
+            except (ValueError, TypeError):
+                raise KeyError(key)
+            # 使用 next() + 生成器表达式查找首个匹配
+            try:
+                return next(
+                    i
+                    for i, v in enumerate(self._data)
+                    if isinstance(v, datetime) and v == key_dt
+                )
+            except StopIteration:
+                raise KeyError(key)
+        try:
+            return self._data.index(key)
+        except ValueError:
+            raise KeyError(key)
+
+    def strftime(self, fmt: str) -> Index:
+        return Index(
+            [v.strftime(fmt) if isinstance(v, datetime) else None for v in self._data]
+        )
+
+    def normalize(self) -> DatetimeIndex:
+        """将时间归一化到午夜。"""
+        return DatetimeIndex(
+            [
+                (
+                    v.replace(hour=0, minute=0, second=0, microsecond=0)
+                    if isinstance(v, datetime)
+                    else None
+                )
+                for v in self._data
+            ],
+            name=self._name,
+            tz=self._tz,
+        )
+
+    def floor(self, freq: str) -> DatetimeIndex:
+        """向下舍入到指定频率。"""
+        freq = freq.strip().upper()
+
+        def _floor(dt):
+            if dt is None:
+                return None
+            if freq == "D":
+                return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            elif freq == "H":
+                return dt.replace(minute=0, second=0, microsecond=0)
+            elif freq in ("M", "T", "min"):
+                return dt.replace(second=0, microsecond=0)
+            elif freq == "S":
+                return dt.replace(microsecond=0)
+            return dt
+
+        return DatetimeIndex(
+            [_floor(v) for v in self._data], name=self._name, tz=self._tz
+        )
+
+    def ceil(self, freq: str) -> DatetimeIndex:
+        """向上舍入到指定频率。"""
+        freq = freq.strip().upper()
+
+        def _ceil(dt):
+            if dt is None:
+                return None
+            floored = None
+            if freq == "D":
+                floored = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            elif freq == "H":
+                floored = dt.replace(minute=0, second=0, microsecond=0)
+            elif freq in ("M", "T", "min"):
+                floored = dt.replace(second=0, microsecond=0)
+            elif freq == "S":
+                floored = dt.replace(microsecond=0)
+            if floored == dt:
+                return dt
+            if freq == "D":
+                return floored + timedelta(days=1)
+            elif freq == "H":
+                return floored + timedelta(hours=1)
+            elif freq in ("M", "T", "min"):
+                return floored + timedelta(minutes=1)
+            elif freq == "S":
+                return floored + timedelta(seconds=1)
+            return dt
+
+        return DatetimeIndex(
+            [_ceil(v) for v in self._data], name=self._name, tz=self._tz
+        )
+
+    def round(self, freq: str) -> DatetimeIndex:
+        """四舍五入到指定频率。"""
+        freq = freq.strip().upper()
+
+        def _round(dt):
+            if dt is None:
+                return None
+            floored = None
+            next_tick = None
+            if freq == "D":
+                floored = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                next_tick = floored + timedelta(days=1)
+            elif freq == "H":
+                floored = dt.replace(minute=0, second=0, microsecond=0)
+                next_tick = floored + timedelta(hours=1)
+            elif freq in ("M", "T", "min"):
+                floored = dt.replace(second=0, microsecond=0)
+                next_tick = floored + timedelta(minutes=1)
+            elif freq == "S":
+                floored = dt.replace(microsecond=0)
+                next_tick = floored + timedelta(seconds=1)
+            if dt - floored < next_tick - dt:
+                return floored
+            return next_tick
+
+        return DatetimeIndex(
+            [_round(v) for v in self._data], name=self._name, tz=self._tz
+        )
+
+
+# ============================================================================
+# TimedeltaIndex - 时间差索引 (v2.0.0)
+# ============================================================================
+
+
+class TimedeltaIndex(Index):
+    """时间差索引，用于存储 timedelta 值。
+
+    Examples:
+        >>> ti = TimedeltaIndex([timedelta(days=1), timedelta(days=2)])
+        >>> ti.days
+        [1, 2]
+    """
+
+    def __init__(self, data, name: Optional[str] = None):
+        """构造 TimedeltaIndex。
+
+        :param data: timedelta 对象列表或字符串列表
+        :param name: 索引名称
+        """
+
+        # 使用辅助函数 + 列表推导式替代显式 for 循环
+        def _parse_one(v):
+            if v is None:
+                return None
+            if isinstance(v, timedelta):
+                return v
+            if isinstance(v, (int, float)):
+                return timedelta(seconds=float(v))
+            if isinstance(v, str):
+                return self._parse_timedelta(v)
+            return v
+
+        self._data = [_parse_one(v) for v in data]
+        self._name = name
+
+    @staticmethod
+    def _parse_timedelta(s: str) -> timedelta:
+        """解析 timedelta 字符串 (如 '1 days 02:00:00')。"""
+        s = s.strip()
+        if "days" in s:
+            parts = s.split(" days ")
+            days = int(parts[0].strip())
+            time_str = parts[1] if len(parts) > 1 else "00:00:00"
+            time_parts = time_str.split(":")
+            hours = int(time_parts[0]) if len(time_parts) > 0 else 0
+            minutes = int(time_parts[1]) if len(time_parts) > 1 else 0
+            seconds = float(time_parts[2]) if len(time_parts) > 2 else 0
+            return timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
+        # 尝试 HH:MM:SS 格式
+        time_parts = s.split(":")
+        if len(time_parts) >= 2:
+            hours = int(time_parts[0]) if len(time_parts) > 0 else 0
+            minutes = int(time_parts[1]) if len(time_parts) > 1 else 0
+            seconds = float(time_parts[2]) if len(time_parts) > 2 else 0
+            return timedelta(hours=hours, minutes=minutes, seconds=seconds)
+        return timedelta(seconds=float(s))
+
+    @property
+    def days(self) -> Index:
+        return Index([v.days if isinstance(v, timedelta) else None for v in self._data])
+
+    @property
+    def seconds(self) -> Index:
+        return Index(
+            [v.seconds if isinstance(v, timedelta) else None for v in self._data]
+        )
+
+    @property
+    def microseconds(self) -> Index:
+        return Index(
+            [v.microseconds if isinstance(v, timedelta) else None for v in self._data]
+        )
+
+    @property
+    def total_seconds(self) -> Index:
+        return Index(
+            [
+                v.total_seconds() if isinstance(v, timedelta) else None
+                for v in self._data
+            ]
+        )
+
+    def __repr__(self) -> str:
+        # 格式化每个 timedelta 为 'N days HH:MM:SS.ffffff'（对齐 主流库 显示）
+        def _fmt_td(v):
+            if v is None:
+                # 主流库: 缺失值显示为 NaT
+                return "NaT"
+            if not isinstance(v, timedelta):
+                return repr(v)
+            days = v.days
+            total_sec = v.seconds
+            hours = total_sec // 3600
+            minutes = (total_sec % 3600) // 60
+            secs = total_sec % 60
+            us = v.microseconds
+            if us > 0:
+                return repr(
+                    f"{days} days {hours:02d}:{minutes:02d}:{secs:02d}.{us:06d}"
+                )
+            return repr(f"{days} days {hours:02d}:{minutes:02d}:{secs:02d}")
+
+        strs = [_fmt_td(v) for v in self._data]
+        name = f", name='{self._name}'" if self._name else ""
+        return (
+            f"TimedeltaIndex([{', '.join(strs)}]{name}, "
+            f"dtype='timedelta64[us]', freq=None)"
+        )
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._data[key]
+        if isinstance(key, slice):
+            return TimedeltaIndex(self._data[key], name=self._name)
+        if isinstance(key, (list, tuple)):
+            return TimedeltaIndex([self._data[i] for i in key], name=self._name)
+        raise TypeError(
+            f"TimedeltaIndex key must be int/slice/list, not {type(key).__name__}"
+        )
+
+    def __contains__(self, item) -> bool:
+        return item in self._data
+
+    def tolist(self) -> list:
+        return list(self._data)
+
+    def to_list(self) -> list:
+        return self.tolist()
+
+    def get_loc(self, key) -> int:
+        # 支持字符串 key 查找
+        if isinstance(key, str):
+            key_td = self._parse_timedelta(key)
+            # 使用 next() + 生成器表达式查找首个匹配
+            try:
+                return next(
+                    i
+                    for i, v in enumerate(self._data)
+                    if isinstance(v, timedelta) and v == key_td
+                )
+            except StopIteration:
+                raise KeyError(key)
+        try:
+            return self._data.index(key)
+        except ValueError:
+            raise KeyError(key)
+
+
+# ============================================================================
+# PeriodIndex - 时期索引 (v2.0.0)
+# ============================================================================
+
+
+class PeriodIndex(Index):
+    """时期索引，用于存储固定频率的时期。
+
+    Examples:
+        >>> pi = PeriodIndex(['2024-01', '2024-02', '2024-03'], freq='M')
+        >>> pi.year
+        [2024, 2024, 2024]
+        >>> pi.month
+        [1, 2, 3]
+    """
+
+    def __init__(self, data, freq: str = "M", name: Optional[str] = None):
+        """构造 PeriodIndex。
+
+        :param data: 时期字符串列表或 datetime 对象列表
+        :param freq: 频率 ('M'/'Q'/'Y'/'D'/'H' 等)
+        :param name: 索引名称
+        """
+        # 使用辅助函数 + 列表推导式替代显式 for 循环
+        self._freq = freq
+
+        def _parse_one(v):
+            if v is None:
+                return None
+            if isinstance(v, datetime):
+                return v
+            if isinstance(v, str):
+                from .._datetime import _parse_iso
+
+                # 尝试解析为时期字符串 (如 '2024-01', '2024-Q1')
+                try:
+                    return _parse_iso(v)
+                except ValueError:
+                    # 尝试时期特定解析
+                    try:
+                        # '2024-01' -> 当月第一天
+                        if "-" in v and len(v) == 7:  # 'YYYY-MM'
+                            return datetime.strptime(v + "-01", "%Y-%m-%d")
+                        elif "-" in v and len(v) == 4:  # 'YYYY'
+                            return datetime.strptime(v + "-01-01", "%Y-%m-%d")
+                        else:
+                            return v
+                    except ValueError:
+                        return v
+            return v
+
+        self._data = [_parse_one(v) for v in data]
+        self._name = name
+
+    @property
+    def freq(self) -> str:
+        return self._freq
+
+    @property
+    def year(self) -> Index:
+        return Index([v.year if isinstance(v, datetime) else None for v in self._data])
+
+    @property
+    def month(self) -> Index:
+        return Index([v.month if isinstance(v, datetime) else None for v in self._data])
+
+    @property
+    def day(self) -> Index:
+        return Index([v.day if isinstance(v, datetime) else None for v in self._data])
+
+    @property
+    def quarter(self) -> Index:
+        return Index(
+            [
+                (v.month - 1) // 3 + 1 if isinstance(v, datetime) else None
+                for v in self._data
+            ]
+        )
+
+    @property
+    def start_time(self) -> DatetimeIndex:
+        return DatetimeIndex(
+            [v if isinstance(v, datetime) else None for v in self._data]
+        )
+
+    @property
+    def end_time(self) -> DatetimeIndex:
+        import calendar
+
+        def _end(dt):
+            if dt is None:
+                return None
+            if self._freq == "M":
+                last_day = calendar.monthrange(dt.year, dt.month)[1]
+                return dt.replace(day=last_day, hour=23, minute=59, second=59)
+            elif self._freq == "Q":
+                m = ((dt.month - 1) // 3 + 1) * 3
+                last_day = calendar.monthrange(dt.year, m)[1]
+                return dt.replace(month=m, day=last_day, hour=23, minute=59, second=59)
+            elif self._freq == "Y":
+                return dt.replace(month=12, day=31, hour=23, minute=59, second=59)
+            return dt
+
+        return DatetimeIndex([_end(v) for v in self._data])
+
+    def __repr__(self) -> str:
+        name = f", name='{self._name}'" if self._name else ""
+        return f"PeriodIndex({self._data}, freq='{self._freq}'{name})"
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._data[key]
+        if isinstance(key, slice):
+            return PeriodIndex(self._data[key], freq=self._freq, name=self._name)
+        if isinstance(key, (list, tuple)):
+            return PeriodIndex(
+                [self._data[i] for i in key], freq=self._freq, name=self._name
+            )
+        raise TypeError(
+            f"PeriodIndex key must be int/slice/list, not {type(key).__name__}"
+        )
+
+    def __contains__(self, item) -> bool:
+        return item in self._data
+
+    def tolist(self) -> list:
+        return list(self._data)
+
+    def to_list(self) -> list:
+        return self.tolist()
+
+    def get_loc(self, key) -> int:
+        if isinstance(key, str):
+            from .._datetime import _parse_iso
+
+            key_dt = _parse_iso(key)
+            # 使用 next() + 生成器表达式查找首个匹配
+            try:
+                return next(
+                    i
+                    for i, v in enumerate(self._data)
+                    if isinstance(v, datetime) and v == key_dt
+                )
+            except StopIteration:
+                raise KeyError(key)
+        try:
+            return self._data.index(key)
+        except ValueError:
+            raise KeyError(key)
+
+    def strftime(self, fmt: str) -> Index:
+        return Index(
+            [v.strftime(fmt) if isinstance(v, datetime) else None for v in self._data]
+        )
+
+    def asfreq(self, freq: str) -> PeriodIndex:
+        """转换为不同频率。"""
+        return PeriodIndex(self._data, freq=freq, name=self._name)

@@ -1,22 +1,22 @@
-# rspandas
+# rsdata
 
-**pandas-compatible API, Rust-powered performance**
+**DataFrame-compatible API, Rust-powered performance**
 
-rspandas 是一个高性能的 pandas 兼容数据分析库，使用 Rust 构建核心计算引擎。提供与 pandas 一致的 API 接口，同时获得接近原生的执行性能。
+rsdata 是一个高性能的 DataFrame 兼容数据分析库，使用 Rust 构建核心计算引擎。提供与主流库一致的 API 接口，同时获得接近原生的执行性能。
 
 ## 特性
 
-- **95%+ pandas API 覆盖** — Series、DataFrame、GroupBy、Rolling/Expanding/EWM、Resampler、时间序列
+- **95%+ DataFrame API 覆盖** — Series、DataFrame、GroupBy、Rolling/Expanding/EWM、Resampler、时间序列
 - **Rust 2024 核心** — 列式存储、向量化计算、Rayon 并行迭代器、LTO 优化
 - **跨平台 wheel** — 预编译二进制支持 Linux (x86_64/arm64)、macOS (Intel/Apple Silicon)、Windows (x64/x86)
-- **最小依赖** — 运行时仅需 `rsnumpy`，无需 NumPy/PyArrow
+- **最小依赖** — 运行时仅需 `rsarray`，无需 PyArrow
 - **丰富 I/O** — CSV、Excel（原生 Rust calamine + rust_xlsxwriter）、JSON、Parquet、SQL、Pickle、Feather
 - **完整类型系统** — int64、float64、bool、string、category、datetime、timedelta、period
 
 ## 安装
 
 ```bash
-pip install rspandas
+pip install rsdata
 ```
 
 要求 Python >= 3.9。
@@ -24,7 +24,7 @@ pip install rspandas
 ## 快速开始
 
 ```python
-import rspandas as rpd
+import rsdata as rpd
 
 # 创建 DataFrame
 df = rpd.DataFrame({
@@ -55,7 +55,7 @@ df.to_parquet("output.parquet")
 ## 依赖
 
 - Python >= 3.9
-- `rsnumpy` — 零拷贝 ndarray 操作
+- `rsarray` — 零拷贝 ndarray 操作
 
 ## 许可证
 

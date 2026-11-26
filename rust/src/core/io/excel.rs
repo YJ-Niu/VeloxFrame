@@ -233,7 +233,7 @@ fn write_sheet(
     let mut row: u32 = 0;
     if include_header {
         for (j, col_name) in columns.iter().enumerate() {
-            // 与 pandas 行为一致：尝试将列名解析为数字，以保持类型
+            // 与 主流库 行为一致：尝试将列名解析为数字，以保持类型
             let col_idx = (j + col_offset) as u16;
             if let Ok(i64_val) = col_name.parse::<i64>() {
                 worksheet.write(row, col_idx, i64_val).map_err(|e| {

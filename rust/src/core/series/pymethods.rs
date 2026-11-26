@@ -629,6 +629,13 @@ impl PySeries {
         PySeries { inner }
     }
 
+    /// 与 dropna 等价，但额外返回被保留行的原始位置索引，
+    /// 让 Python 层跳过 notnull() 二次调用与循环重建索引。
+    fn dropna_with_index(&self, py: Python<'_>) -> (Self, Vec<usize>) {
+        let (inner, indices) = py.detach(|| self.inner.dropna_with_index());
+        (PySeries { inner }, indices)
+    }
+
     /// 填充缺失值 (根据 dtype 自动选择)
     fn fillna<'py>(&self, py: Python<'py>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let dtype = self.inner.dtype();
@@ -860,7 +867,7 @@ impl PySeries {
         }
     }
 
-    /// numpy.searchsorted：返回 values 在已升序（或经 sorter 重排后升序）的
+    /// rsarray.searchsorted：返回 values 在已升序（或经 sorter 重排后升序）的
     /// self 中的插入位置。返回与 values 等长的 usize 列表。
     #[pyo3(signature = (values, side="left", sorter=None))]
     fn searchsorted<'py>(
@@ -1344,5 +1351,310 @@ impl PySeries {
         let op_owned = op.to_string();
         let mask = py.detach(|| self.inner.compare_scalar(&op_owned, value));
         PyList::new(py, mask.iter().copied())
+    }
+
+    // ---------- 替换 / 差分 / 去重 / 合并（ops_extra） ----------
+
+    /// 标量值替换：将 ``old_str`` 表示的值替换为 ``new_str`` 表示的值。
+    /// 仅对 Int64/Float64/Bool/Categorical 加速；Object 列返回 None（Python 层回退）。
+    fn replace_scalar(&self, py: Python<'_>, old_str: &str, new_str: &str) -> Option<Self> {
+        // 将 &str 转为 String 以脱离借用，避免闭包捕获引用生命期问题
+        let old_owned = old_str.to_string();
+        let new_owned = new_str.to_string();
+        let result = py.detach(|| self.inner.replace_scalar(&old_owned, &new_owned));
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 字典批量替换：``pairs`` 是 ``(old_str, new_str)`` 列表。
+    /// 仅对 Int64/Float64/Bool/Categorical 加速；Object 列返回 None（Python 层回退）。
+    fn replace_dict(&self, py: Python<'_>, pairs: Vec<(String, String)>) -> Option<Self> {
+        let result = py.detach(|| self.inner.replace_dict(&pairs));
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 计算差分：``result[i] = self[i] - self[i - periods]``。
+    /// - periods > 0：前 periods 个为 None
+    /// - periods < 0：后 |periods| 个为 None
+    /// - periods == 0：返回原 Series 的副本
+    /// 仅 Int64/Float64 列实际计算差分；其他类型返回全 None 的同 dtype Series。
+    fn diff(&self, py: Python<'_>, periods: i32) -> Self {
+        let inner = py.detach(|| self.inner.diff(periods));
+        PySeries { inner }
+    }
+
+    /// 去重：依据 ``keep`` 策略保留重复值的代表行。
+    /// - keep="first"：保留首次出现（默认）
+    /// - keep="last"：保留末次出现
+    /// - keep=False：删除所有重复值，仅保留唯一值
+    fn drop_duplicates(&self, py: Python<'_>, keep: &str) -> Self {
+        let keep_owned = keep.to_string();
+        let inner = py.detach(|| self.inner.drop_duplicates(&keep_owned));
+        PySeries { inner }
+    }
+
+    /// 与 drop_duplicates 等价，但额外返回被保留行的原始位置索引，
+    /// 让 Python 层跳过二次 mask 计算与循环重建索引。
+    fn drop_duplicates_with_index(&self, py: Python<'_>, keep: &str) -> (Self, Vec<usize>) {
+        let keep_owned = keep.to_string();
+        let (inner, indices) = py.detach(|| self.inner.drop_duplicates_with_index(&keep_owned));
+        (PySeries { inner }, indices)
+    }
+
+    /// 重复值标记：返回与 self 等长的 bool Vec，``true`` 表示该位置为重复行。
+    /// 与 :meth:`drop_duplicates` 互补（标记的是被丢弃的行）。
+    fn duplicated_mask(&self, py: Python<'_>, keep: &str) -> Vec<bool> {
+        let keep_owned = keep.to_string();
+        py.detach(|| self.inner.duplicated_mask(&keep_owned))
+    }
+
+    /// 与 :meth:`duplicated_mask` 等价，但直接返回 PySeries（Bool 列），
+    /// 避免双重边界穿越。Python 层可直接 ``_from_inner`` 包装结果。
+    fn duplicated_series(&self, py: Python<'_>, keep: &str) -> Self {
+        let keep_owned = keep.to_string();
+        let inner = py.detach(|| self.inner.duplicated_series(&keep_owned));
+        PySeries { inner }
+    }
+
+    /// 计算众数：返回出现次数最多的值（可能多个），按升序排列。
+    /// 空列或全 None 列返回 None（由 Python 层回退到空 Series）。
+    fn mode(&self, py: Python<'_>) -> Option<Self> {
+        let result = py.detach(|| self.inner.mode());
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 用 ``other`` 的非空值填充 self 的空值。
+    /// 仅支持长度相同且 dtype 相同的 Int64/Float64/Bool/String 列；
+    /// dtype 不匹配 / 长度不同 / Categorical 列 → 返回 None（Python 层回退）。
+    fn combine_first(&self, py: Python<'_>, other: &Self) -> Option<Self> {
+        let result = py.detach(|| self.inner.combine_first(&other.inner));
+        result.map(|inner| PySeries { inner })
+    }
+
+    // ---------- 数值运算扩展（numeric_ops） ----------
+
+    /// 逐元素绝对值。仅 Int64/Float64 加速；其他列返回 None。
+    fn abs(&self, py: Python<'_>) -> Option<Self> {
+        let result = py.detach(|| self.inner.abs());
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 逐元素四舍五入到 ``decimals`` 位小数。
+    fn round(&self, py: Python<'_>, decimals: i32) -> Option<Self> {
+        let result = py.detach(|| self.inner.round(decimals));
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 逐元素裁剪到 ``[lower, upper]`` 区间。
+    /// lower/upper 任一为 None 表示该侧无限制。
+    /// lower_is_int/upper_is_int 标志用于精确处理 int 字面量在 float 列上的裁剪。
+    fn clip(
+        &self,
+        py: Python<'_>,
+        lower: Option<f64>,
+        upper: Option<f64>,
+        lower_is_int: bool,
+        upper_is_int: bool,
+    ) -> Option<Self> {
+        let result = py.detach(|| self.inner.clip(lower, upper, lower_is_int, upper_is_int));
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 逐元素判断是否在 ``[lower, upper]`` 区间（返回 Bool Series）。
+    /// inclusive: 'both' / 'left' / 'right' / 'neither'。
+    fn between(&self, py: Python<'_>, lower: f64, upper: f64, inclusive: &str) -> Option<Self> {
+        let inc_owned = inclusive.to_string();
+        let result = py.detach(|| self.inner.between(lower, upper, &inc_owned));
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 累积求和。仅 Int64/Float64 加速；其他列返回 None。
+    fn cumsum(&self, py: Python<'_>) -> Option<Self> {
+        let result = py.detach(|| self.inner.cumsum());
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 累积乘积。
+    fn cumprod(&self, py: Python<'_>) -> Option<Self> {
+        let result = py.detach(|| self.inner.cumprod());
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 累积最小值。
+    fn cummin(&self, py: Python<'_>) -> Option<Self> {
+        let result = py.detach(|| self.inner.cummin());
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 累积最大值。
+    fn cummax(&self, py: Python<'_>) -> Option<Self> {
+        let result = py.detach(|| self.inner.cummax());
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 按 ``periods`` 偏移数据。
+    fn shift(&self, py: Python<'_>, periods: i32) -> Option<Self> {
+        let result = py.detach(|| self.inner.shift(periods));
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 三元条件选择：cond[i] 为 true 取 self[i]，否则取 other[i]。
+    /// 仅同 dtype 同长度的 Int64/Float64/Bool/String 加速；其他返回 None。
+    fn where_cond(&self, py: Python<'_>, cond: Vec<bool>, other: &Self) -> Option<Self> {
+        let result = py.detach(|| self.inner.where_cond(&cond, &other.inner));
+        result.map(|inner| PySeries { inner })
+    }
+
+    // ---------- 类型转换 (astype) ----------
+
+    /// 通用 astype：将当前 Series 转换为 ``target`` dtype。
+    ///
+    /// 返回 None 时 Python 层回退到通用实现（如 categorical 转换、未知 dtype）。
+    /// Rust 层不区分分子类型（int8/int16/.../uint64 统一为 int64 存储），
+    /// Python 层在调用方设置 ``_dtype_str`` 以保留子类型信息。
+    fn astype(&self, py: Python<'_>, target: &str) -> Option<Self> {
+        let target_owned = target.to_string();
+        let result = py.detach(|| self.inner.astype(&target_owned));
+        result.map(|inner| PySeries { inner })
+    }
+
+    // ---------- 集合成员判断 (isin) ----------
+    //
+    // 每个方法接受目标 dtype 的 Vec，返回与 self 等长的布尔掩码。
+    // 不匹配 dtype 时返回全 false 的 Vec，Python 层据此回退到通用实现。
+
+    /// Int64 列的 isin。
+    fn isin_i64(&self, py: Python<'_>, values: Vec<i64>) -> Vec<bool> {
+        py.detach(|| self.inner.isin_i64(values))
+    }
+
+    /// Float64 列的 isin。
+    fn isin_f64(&self, py: Python<'_>, values: Vec<f64>) -> Vec<bool> {
+        py.detach(|| self.inner.isin_f64(values))
+    }
+
+    /// Bool 列的 isin。
+    fn isin_bool(&self, py: Python<'_>, values: Vec<bool>) -> Vec<bool> {
+        py.detach(|| self.inner.isin_bool(values))
+    }
+
+    /// String 列的 isin。
+    fn isin_string(&self, py: Python<'_>, values: Vec<String>) -> Vec<bool> {
+        py.detach(|| self.inner.isin_string(values))
+    }
+
+    // ---------- 位置索引（argmax / argmin） ----------
+
+    /// 返回最大值首次出现的位置索引（None / NaN 视为缺失）。
+    /// 全空或空列返回 None；Categorical 列返回 None（Python 层回退）。
+    fn argmax<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let result = py.detach(|| self.inner.argmax().map(AggResult::Usize));
+        match result {
+            Some(AggResult::Usize(v)) => Ok(v.into_pyobject(py)?.into_any()),
+            None => Ok(py.None().into_bound(py)),
+            _ => Ok(py.None().into_bound(py)),
+        }
+    }
+
+    /// 返回最小值首次出现的位置索引（None / NaN 视为缺失）。
+    fn argmin<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let result = py.detach(|| self.inner.argmin().map(AggResult::Usize));
+        match result {
+            Some(AggResult::Usize(v)) => Ok(v.into_pyobject(py)?.into_any()),
+            None => Ok(py.None().into_bound(py)),
+            _ => Ok(py.None().into_bound(py)),
+        }
+    }
+
+    // ---------- 高阶矩 ----------
+
+    /// 样本偏度。bias=false 时进行无偏修正；n<3 或非数值列返回 None。
+    fn skew<'py>(&self, py: Python<'py>, bias: bool) -> PyResult<Bound<'py, PyAny>> {
+        let result = py.detach(|| self.inner.skew(bias).map(AggResult::Float));
+        match result {
+            Some(AggResult::Float(v)) => Ok(v.into_pyobject(py)?.into_any()),
+            None => Ok(py.None().into_bound(py)),
+            _ => Ok(py.None().into_bound(py)),
+        }
+    }
+
+    /// 样本峰度。bias=false 时无偏修正；fisher=false 时返回 Pearson 峰度。
+    fn kurt<'py>(&self, py: Python<'py>, bias: bool, fisher: bool) -> PyResult<Bound<'py, PyAny>> {
+        let result = py.detach(|| self.inner.kurt(bias, fisher).map(AggResult::Float));
+        match result {
+            Some(AggResult::Float(v)) => Ok(v.into_pyobject(py)?.into_any()),
+            None => Ok(py.None().into_bound(py)),
+            _ => Ok(py.None().into_bound(py)),
+        }
+    }
+
+    /// 平均绝对偏差：mean(|x - mean(x)|)。
+    fn mad<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let result = py.detach(|| self.inner.mad().map(AggResult::Float));
+        match result {
+            Some(AggResult::Float(v)) => Ok(v.into_pyobject(py)?.into_any()),
+            None => Ok(py.None().into_bound(py)),
+            _ => Ok(py.None().into_bound(py)),
+        }
+    }
+
+    /// 自相关系数。lag >= n 或方差为 0 返回 None。
+    fn autocorr<'py>(&self, py: Python<'py>, lag: usize) -> PyResult<Bound<'py, PyAny>> {
+        let result = py.detach(|| self.inner.autocorr(lag).map(AggResult::Float));
+        match result {
+            Some(AggResult::Float(v)) => Ok(v.into_pyobject(py)?.into_any()),
+            None => Ok(py.None().into_bound(py)),
+            _ => Ok(py.None().into_bound(py)),
+        }
+    }
+
+    // ---------- 乘积 ----------
+
+    /// 元素乘积：Int64 列返回 int，Float64 列返回 float；其他列返回 None。
+    /// 空列返回 1（与 主流库 min_count=0 一致）。
+    fn prod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let dtype = self.inner.dtype();
+        let result = py.detach(|| match dtype {
+            DType::Int64 => self
+                .inner
+                .prod_i64()
+                .map(AggResult::Int)
+                .unwrap_or(AggResult::None),
+            DType::Float64 => self
+                .inner
+                .prod_f64()
+                .map(AggResult::Float)
+                .unwrap_or(AggResult::None),
+            _ => AggResult::None,
+        });
+        match result {
+            AggResult::Int(v) => Ok(v.into_pyobject(py)?.into_any()),
+            AggResult::Float(v) => Ok(v.into_pyobject(py)?.into_any()),
+            AggResult::None => Ok(py.None().into_bound(py)),
+            _ => Ok(py.None().into_bound(py)),
+        }
+    }
+
+    // ---------- 百分比变化 ----------
+
+    /// ``periods`` 阶百分比变化 ``(x[i] - x[i-periods]) / x[i-periods]``。
+    /// 仅 Int64/Float64 加速；其他列返回 None。
+    fn pct_change(&self, py: Python<'_>, periods: i32) -> Option<Self> {
+        let result = py.detach(|| self.inner.pct_change(periods));
+        result.map(|inner| PySeries { inner })
+    }
+
+    /// 点积：``sum(self[i] * other[i])``，跳过任一侧为 None / NaN 的位置。
+    /// 长度不匹配或 dtype 不支持返回 None（Python 层抛 ValueError 或回退）。
+    fn dot_f64(&self, py: Python<'_>, other: Vec<Option<f64>>) -> Option<f64> {
+        py.detach(|| self.inner.dot_f64(&other))
+    }
+
+    // ---------- argsort ----------
+
+    /// 返回排序后的位置索引列表（与 rsarray.argsort 对齐）。
+    /// 稳定排序；None/NaN 放在末尾。
+    fn argsort<'py>(&self, py: Python<'py>, ascending: bool) -> PyResult<Bound<'py, PyList>> {
+        let idx: Vec<usize> = py.detach(|| self.inner.argsort(ascending));
+        PyList::new(py, idx.iter().copied())
     }
 }

@@ -110,7 +110,7 @@ fn write_feather_impl(
     // Arrow IPC v1 不支持压缩；若用户指定压缩，记录警告但使用 uncompressed
     // （Arrow IPC v5 支持 lz4/zstd，但 arrow 55 的 FileWriter 默认用 v1）
     if compression != "uncompressed" && !compression.is_empty() {
-        // 静默降级：pandas 的 to_feather 也只在某些版本支持 IPC 压缩
+        // 静默降级：主流库 的 to_feather 也只在某些版本支持 IPC 压缩
         eprintln!(
             "warning: feather IPC compression '{compression}' not supported, using uncompressed"
         );
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn test_feather_roundtrip_int_float() {
-        let path = temp_dir().join("rspandas_test_feather_int_float.arrow");
+        let path = temp_dir().join("rsdata_test_feather_int_float.arrow");
         let columns = vec!["a".to_string(), "b".to_string()];
         let series = vec![
             Series::new_int(Some("a".to_string()), vec![Some(1), None, Some(3)]),
@@ -272,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_feather_roundtrip_string_bool() {
-        let path = temp_dir().join("rspandas_test_feather_string_bool.arrow");
+        let path = temp_dir().join("rsdata_test_feather_string_bool.arrow");
         let columns = vec!["s".to_string(), "f".to_string()];
         let series = vec![
             Series::new_string(

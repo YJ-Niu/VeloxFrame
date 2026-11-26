@@ -1,6 +1,6 @@
-# rspandas 优化清单
+# rsdata 优化清单
 
-> 本文档记录 rspandas 的完整开发与优化任务，已完成的打 ✓，待完成的打 ☐。
+> 本文档记录 rsdata 的完整开发与优化任务，已完成的打 ✓，待完成的打 ☐。
 
 ---
 
@@ -8,16 +8,16 @@
 
 ### 目标
 
-Python 层应保持"薄"——仅作为 API 接口层，核心计算逻辑下沉到 Rust 层。同时确保所有方法的参数签名、默认值与 pandas 完全一致。
+Python 层应保持"薄"——仅作为 API 接口层，核心计算逻辑下沉到 Rust 层。同时确保所有方法的参数签名、默认值与主流库完全一致。
 
 ### 原则
 
 - Python 层方法只做：参数校验 → 调用 Rust 层 → 包装返回结果
 - 禁止在 Python 层实现复杂计算逻辑（统计、排序、聚合等）
-- 所有公开方法的参数名、默认值、类型注解必须与 pandas 对齐
-- 对 pandas 不存在但 rspandas 扩展的方法，参数设计应参考 pandas 风格
-- rsnumpy 为必选依赖，Python 层通过 `import rsnumpy as rnp` 直接引用
-- `to_numpy()` / `from_numpy()` 使用 rsnumpy.ndarray 而非 numpy.ndarray
+- 所有公开方法的参数名、默认值、类型注解必须与主流库对齐
+- 对主流库不存在但 rsdata 扩展的方法，参数设计应参考主流库风格
+- rsarray 为必选依赖，Python 层通过 `import rsarray as rnp` 直接引用
+- `to_numpy()` / `from_numpy()` 使用 rsarray.ndarray
 
 ### 检查清单
 
@@ -46,7 +46,7 @@ Python 层应保持"薄"——仅作为 API 接口层，核心计算逻辑下沉
 | to_string / to_markdown                  | ✓    | 补全 Series 的格式化输出                                              |
 | asfreq / tz_localize / tz_convert        | ✓    | 补全时间序列方法                                                      |
 | first / last                             | ✓    | 补全基于时间的首尾选取                                                |
-| array 属性                               | ✓    | 补全原生 Array 接口（返回 rsnumpy.ndarray）                           |
+| array 属性                               | ✓    | 补全原生 Array 接口（返回 rsarray.ndarray）                           |
 | flags / sparse 属性                      | ✓    | 补全标志和稀疏访问器（flags 返回字典；sparse 返回未实现提示）         |
 
 #### 1.2 DataFrame — Python 层瘦身
@@ -69,7 +69,7 @@ Python 层应保持"薄"——仅作为 API 接口层，核心计算逻辑下沉
 | infer_objects / convert_dtypes                                                                    | ✓    | 补全类型推断方法                                                                                            |
 | attrs 属性                                                                                        | ✓    | 补全全局属性字典（attrs 属性 + setter）                                                                     |
 | flags / sparse 属性                                                                               | ✓    | 补全标志和稀疏访问器（flags 返回字典；sparse 返回未实现提示）                                               |
-| append                                                                                            | ✓    | 补全追加行方法（pandas 已废弃但仍存在）                                                                     |
+| append                                                                                            | ✓    | 补全追加行方法（主流库已废弃但仍存在）                                                                     |
 | merge_asof                                                                                        | ✓    | 补全近似合并                                                                                                |
 | wide_to_long                                                                                      | ✓    | 补全宽转长方法                                                                                              |
 
@@ -294,7 +294,7 @@ Rust 层作为底层实现，要求高性能（利用并行计算、零拷贝、
 | 边界检查         | ✓    | 所有数组访问使用 .get() 或已检查索引                |
 | Python 输入验证  | ✓    | PyO3 方法中对类型进行验证，无未验证输入传入         |
 | 错误处理统一     | ✓    | 核心逻辑使用 Result<T,E> + ? 传播，无 unwrap/expect |
-| 异常映射对齐     | ✓    | ValueError/TypeError/PyIOError 语义与 pandas 一致   |
+| 异常映射对齐     | ✓    | ValueError/TypeError/PyIOError 语义与主流库一致   |
 
 #### 3.4 Rust 层功能扩展
 
@@ -327,12 +327,12 @@ Rust 层作为底层实现，要求高性能（利用并行计算、零拷贝、
 ### 当前结构
 
 ```
-rspandas/
+rsdata/
 ├── src/                # Rust 源码
 │   ├── lib.rs
 │   └── core/
 ├── python/             # Python 源码
-│   └── rspandas/
+│   └── rsdata/
 ├── test/
 ├── build_wheel.sh
 ├── pyproject.toml
@@ -343,7 +343,7 @@ rspandas/
 ### 目标结构
 
 ```
-rspandas/
+rsdata/
 ├── src/                        # Rust 源码
 │   ├── lib.rs                  # 库入口，PyO3 模块注册
 │   └── core/                   # 核心模块
@@ -354,7 +354,7 @@ rspandas/
 │       ├── csv_io.rs           # CSV 读写（read_csv_string/write_csv_string 等）
 │       └── xlsx_io.rs          # Excel 读写（read_xlsx/write_xlsx 等）
 ├── python/                     # Python 源码
-│   └── rspandas/               # Python 包
+│   └── rsdata/               # Python 包
 │       ├── __init__.py         # 包入口，导出核心 API，全局选项配置
 │       ├── series.py           # Series 类及辅助类（Rolling/Expanding/EWM/Resampler/
 │       │                       #   StringAccessor/CatAccessor/DatetimeAccessor/SeriesGroupBy）
@@ -363,7 +363,7 @@ rspandas/
 │       ├── _datetime.py        # 日期时间函数（to_datetime/date_range/to_timedelta 等）
 │       ├── io.py               # IO 接口（read_csv/read_json/read_excel/read_parquet 等）
 │       ├── offsets.py          # 时间偏移量
-│       ├── rspandas_api.pyi    # 类型存根文件
+│       ├── rsdata_api.pyi    # 类型存根文件
 │       └── api/                # API 子模块
 │           ├── __init__.py     # API 模块入口
 │           └── types.py        # 类型检查函数（is_numeric_dtype/is_string_dtype 等）
@@ -397,11 +397,11 @@ rspandas/
 
 ---
 
-## 五、扩展功能（pandas 独有之外的增强）
+## 五、扩展功能（主流库独有之外的增强）
 
 ### 目标
 
-利用 Rust 的性能优势，提供 pandas 没有的数据分析增强功能。
+利用 Rust 的性能优势，提供主流库没有的数据分析增强功能。
 
 ### 检查清单
 

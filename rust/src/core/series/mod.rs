@@ -6,6 +6,7 @@
 //! - :mod:`.stats`：聚合统计（count/sum/mean/min/max/std/var/median/any/all）
 //! - :mod:`.missing`：缺失值、ffill/bfill、插值/采样/重采样
 //! - :mod:`.ops`：Series vs Series 逐元素算术/比较运算（Rust 加速路径）
+//! - :mod:`.ops_extra`：替换/差分/去重/合并非空值等扩展运算（replace/diff/drop_duplicates/combine_first）
 //! - :mod:`.accessors`：Categorical 操作与日期时间访问器
 //! - :mod:`.window`：分位数 / 排名 / 值计数 / 滚动 / 扩展 / 指数加权窗口
 //! - :mod:`.sort`：排序、searchsorted、arg_top_n
@@ -20,7 +21,9 @@ pub mod basic;
 pub mod compare;
 pub mod groupby;
 pub mod missing;
+pub mod numeric_ops;
 pub mod ops;
+pub mod ops_extra;
 pub mod pymethods;
 pub mod sort;
 pub mod stats;
@@ -59,7 +62,7 @@ pub(crate) enum AggResult {
 // =====================================================================
 
 /// Python 端 _Series，包装 Rust Series
-#[pyclass(name = "_Series", module = "rspandas", from_py_object)]
+#[pyclass(name = "_Series", module = "rsdata", from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PySeries {
     pub inner: Series,
@@ -192,7 +195,7 @@ impl PySeries {
 // factorize 函数
 // =====================================================================
 
-/// 对输入值进行 factorize 编码 (类似 pandas.factorize)
+/// 对输入值进行 factorize 编码 (类似 factorize)
 /// 返回 (codes, categories)
 #[pyfunction]
 pub fn factorize<'py>(

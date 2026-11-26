@@ -1,7 +1,7 @@
 //! Series 缺失值处理：isnull / notnull / dropna / fillna / ffill / bfill / interpolate / sample / resample。
 //!
 //! - 缺失值统一以 None 表示（浮点 NaN 也视作缺失）
-//! - ffill / bfill / interpolate 与 pandas 默认行为对齐
+//! - ffill / bfill / interpolate 与 主流库 默认行为对齐
 //! - sample 提供可重现的 LCG 伪随机采样
 //! - resample 按时间桶聚合
 
@@ -25,6 +25,21 @@ impl Series {
             name: self.name.clone(),
             data: self.data.dropna(),
         }
+    }
+
+    /// 删除缺失值，同时返回被保留行的原始位置索引。
+    ///
+    /// 与 :meth:`dropna` 等价，但额外返回 ``Vec<usize>``，避免 Python 层
+    /// 二次遍历 mask 来重建索引，消除 Python 循环开销。
+    pub fn dropna_with_index(&self) -> (Series, Vec<usize>) {
+        let mask = self.data.notnull();
+        let indices: Vec<usize> = mask
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &keep)| if keep { Some(i) } else { None })
+            .collect();
+        let new_series = self.filter(&mask);
+        (new_series, indices)
     }
 
     pub fn fillna_i64(&self, v: i64) -> Series {

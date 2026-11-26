@@ -1,5 +1,5 @@
 import pandas as pd
-import numpy as np
+import rsarray as np
 import time
 import matplotlib.pyplot as plt
 import os

@@ -68,7 +68,7 @@ impl DataFrame {
         let mut result_columns: Vec<String> = Vec::new();
         let mut result_data: Vec<Series> = Vec::new();
 
-        // 左表所有列（保留全部列，pandas 风格）
+        // 左表所有列（保留全部列，主流库 风格）
         for (col_idx, col_name) in self.columns.iter().enumerate() {
             result_columns.push(col_name.clone());
             let series = &self.data[col_idx];
