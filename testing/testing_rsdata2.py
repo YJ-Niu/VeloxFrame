@@ -8,6 +8,7 @@ from dataclasses import make_dataclass  # noqa: E402
 import rsdata as pd  # noqa: E402
 from io import StringIO  # noqa: E402
 
+
 def print_series(num, s):
     print("++++++++++++++++++++", num)
     print(s)
@@ -265,6 +266,7 @@ print_series(137, df1)
 print_series(138, df2)
 print_series(139, df1.combine_first(df2))
 
+
 def combiner(x, y):
     return np.where(pd.isna(x), y, x)
 
@@ -333,6 +335,8 @@ print_series(173, factor)
 arr = np.random.randn(30)
 factor = pd.qcut(arr, [0, 0.25, 0.5, 0.75, 1])
 print_series(174, factor)
+
+
 def extract_city_name(df):
     """
     Chicago, IL -> Chicago for city_name column
@@ -367,6 +371,7 @@ tsdf = pd.DataFrame(
 )
 print_series(184, tsdf.apply(lambda x: x.idxmax()))
 
+
 def subtract_and_divide(x, sub, divide=1):
     return (x - sub) / divide
 
@@ -396,6 +401,8 @@ print_series(193, tsdf.agg(["sum"]))
 print_series(194, tsdf.agg(["sum", "mean"]))
 print_series(195, tsdf["A"].agg(["sum", "mean"]))
 print_series(196, tsdf["A"].agg(["sum", lambda x: x.mean()]))
+
+
 def mymean(x):
     return x.mean()
 
@@ -426,6 +433,8 @@ print_series(209, tsdf.transform({"A": np.abs, "B": lambda x: x + 1}))
 print_series(210, tsdf.transform({"A": np.abs, "B": [lambda x: x + 1, "sqrt"]}))
 df4 = df.copy()
 print_series(211, df4)
+
+
 def f(x):
     return len(str(x))
 
