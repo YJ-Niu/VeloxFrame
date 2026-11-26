@@ -120,6 +120,16 @@ class _DtypeScalar:
     def __abs__(self):
         return abs(self._value)
 
+    def __getattr__(self, name):
+        """代理到包装的原始值，使标量可访问其属性（如 Period.freq / datetime.year）。
+
+        仅当 _DtypeScalar 自身没有该属性时才触发（避免影响 dtype/比较等已定义行为）。
+        下划线开头的私有属性不代理，防止内部字段泄漏。
+        """
+        if name.startswith("_"):
+            raise AttributeError(f"_DtypeScalar object has no attribute {name!r}")
+        return getattr(self._value, name)
+
 
 def _dtype_to_str(dtype) -> str:
     """将 dtype 参数（str/type 对象/rsarray dtype 对象）规范化为字符串。

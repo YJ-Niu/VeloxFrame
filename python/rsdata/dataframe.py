@@ -2005,10 +2005,85 @@ class DataFrame:
                     result_inner = self._inner.merge(
                         right._inner, left_idx, right_idx, how
                     )
-                    return DataFrame._from_inner(result_inner)
+                    result_df = DataFrame._from_inner(result_inner)
+                    # Rust merge 层统一输出字符串列，按源列 dtype 还原数值类型
+                    result_df = self._restore_merge_dtypes(result_df, right)
+                    return result_df
             except Exception:
                 pass
 
+        return self._merge_python_fallback(
+            right,
+            how,
+            on,
+            left_on,
+            right_on,
+            left_index,
+            right_index,
+            sort,
+            suffixes,
+            copy,
+            indicator,
+            validate,
+        )
+
+    def _restore_merge_dtypes(
+        self, result_df: "DataFrame", right: "DataFrame"
+    ) -> "DataFrame":
+        """按源列 dtype 还原 Rust merge 输出中丢失的数值类型。
+
+        Rust 合并层以字符串表示所有列值；本方法将源列为 int64/float64 的
+        结果列重新解析为数值（缺失值保持 None）。
+        """
+        # 结果列 -> 源列 dtype（左表列优先，右表非键列补充）
+        src_dtype: Dict[str, str] = {}
+        for c in self._columns:
+            try:
+                src_dtype[c] = self._get_column_as_series(c).dtype
+            except Exception:
+                pass
+        for c in right._columns:
+            if c not in src_dtype:
+                try:
+                    src_dtype[c] = right._get_column_as_series(c).dtype
+                except Exception:
+                    pass
+        new_dict: Dict[str, list] = {}
+        for c in result_df._columns:
+            vals = list(result_df._inner.get_column(c).values)
+            dt = src_dtype.get(c)
+            if dt in ("int64", "float64"):
+                parsed = []
+                for v in vals:
+                    if v is None or (isinstance(v, str) and v.strip() == ""):
+                        parsed.append(None)
+                        continue
+                    try:
+                        f = float(v)
+                        parsed.append(int(f) if dt == "int64" else f)
+                    except (ValueError, TypeError):
+                        parsed.append(None)
+                new_dict[c] = parsed
+            else:
+                new_dict[c] = vals
+        index = list(result_df._index) if result_df._index is not None else None
+        return DataFrame(new_dict, index=index)
+
+    def _merge_python_fallback(
+        self,
+        right: "DataFrame",
+        how: str,
+        on,
+        left_on,
+        right_on,
+        left_index,
+        right_index,
+        sort,
+        suffixes,
+        copy: bool = True,
+        indicator: bool = False,
+        validate=None,
+    ) -> "DataFrame":
         # 回退到 Python 实现
         # 确定连接键
         other = right  # 兼容性
@@ -6247,7 +6322,10 @@ class DataFrame:
                     result_inner = self._inner.pivot(
                         index_idx, columns_idx, values_idx, "sum"
                     )
-                    return DataFrame._from_inner(result_inner)
+                    result_df = DataFrame._from_inner(result_inner)
+                    if index:
+                        result_df = result_df.set_index(index)
+                    return result_df
             except Exception:
                 pass
 
@@ -6297,7 +6375,10 @@ class DataFrame:
                         col_data.append(vals[j] if j < len(vals) else None)
                 new_data[col_name] = col_data
 
-        return DataFrame(new_data)
+        result_df = DataFrame(new_data)
+        if index:
+            result_df = result_df.set_index(index)
+        return result_df
 
     def pivot_table(
         self,
@@ -10042,3 +10123,661 @@ class DataFrame:
             return ax
         except ImportError:
             raise NotImplementedError("plot requires rsplotlib")
+
+    # ---------- 逐元素谓词 / 标量提取 (pandas 对齐) ----------
+
+    def isin(self, values) -> "DataFrame":
+        """判断每个元素是否在 values 中。
+
+        :param values: dict | list | set | tuple | Series | DataFrame
+            - dict: ``{列名: 值列表}``，逐列判断
+            - list/set: 所有列判断元素是否在集合中
+            - Series: 判断元素是否在该 Series 的取值中
+            - DataFrame: 逐列判断元素是否在对应列的取值中
+        :return: bool 型 DataFrame
+
+        Examples:
+            >>> df = DataFrame({'A': [1, 2, 3], 'B': ['x', 'y', 'x']})
+            >>> df.isin([1, 'x'])
+               A      B
+            0  True   True
+            1  False  False
+            2  False  True
+        """
+        result: Dict[str, list] = {}
+        if isinstance(values, dict):
+            for c in self._columns:
+                if c in values:
+                    col = self._get_column_as_series(c)
+                    result[c] = col.isin(values[c]).to_list()
+                else:
+                    result[c] = [False] * self._nrows
+            return DataFrame(result, index=list(self._index))
+        if isinstance(values, DataFrame):
+            for c in self._columns:
+                own = self._get_column_as_series(c).to_list()
+                if c in values._columns:
+                    other_set = set(values._get_column_as_series(c).to_list())
+                else:
+                    other_set = set()
+                result[c] = [v in other_set for v in own]
+            return DataFrame(result, index=list(self._index))
+        if isinstance(values, Series):
+            val_set = set(values.to_list())
+        else:
+            val_set = set(values)
+        for c in self._columns:
+            own = self._get_column_as_series(c).to_list()
+            result[c] = [v in val_set for v in own]
+        return DataFrame(result, index=list(self._index))
+
+    def bool(self) -> bool:
+        """当 DataFrame 只有一个元素时返回其布尔值。
+
+        :raises ValueError: size != 1
+        """
+        if self.size != 1:
+            raise ValueError(
+                "can only call bool on a DataFrame with exactly one element"
+            )
+        return bool(self._get_column_as_series(self._columns[0]).to_list()[0])
+
+    def item(self):
+        """返回唯一元素作为 Python 标量 (仅 size == 1 时有效)。
+
+        :raises ValueError: size != 1
+        """
+        if self.size != 1:
+            raise ValueError("can only convert an array of size 1 to a Python scalar")
+        return self._get_column_as_series(self._columns[0]).to_list()[0]
+
+    def set_axis(self, labels, axis: int = 0, copy: bool = True) -> "DataFrame":
+        """设置轴标签。
+
+        :param labels: 标签列表
+        :param axis: 0 表示 index，1 表示 columns
+        :param copy: 是否复制数据
+        :return: DataFrame
+
+        Examples:
+            >>> df = DataFrame({'A': [1, 2]})
+            >>> df.set_axis(['x', 'y']).index
+            ['x', 'y']
+        """
+        df = self.copy(deep=copy) if copy else self
+        labels = list(labels)
+        if axis == 0:
+            if len(labels) != self._nrows:
+                raise ValueError(
+                    f"Length of labels ({len(labels)}) must match the "
+                    f"size of the axis ({self._nrows})"
+                )
+            df._index = labels
+        elif axis == 1:
+            if len(labels) != len(self._columns):
+                raise ValueError(
+                    f"Length of labels ({len(labels)}) must match the "
+                    f"number of columns ({len(self._columns)})"
+                )
+            # 使用 columns setter 同步 Rust 端列名（直接改 _columns 不会更新 _inner）
+            df.columns = labels
+        else:
+            raise ValueError(f"No axis named {axis} for object type DataFrame")
+        return df
+
+    # ---------- 窗口操作 (逐列委托 Series 实现，返回 DataFrame) ----------
+
+    def rolling(
+        self,
+        window,
+        min_periods: Optional[int] = None,
+        center: bool = False,
+        win_type: Optional[str] = None,
+        on=None,
+        axis: int = 0,
+        closed: Optional[str] = None,
+    ) -> "_DataFrameRolling":
+        """滚动窗口 (pandas 对齐)。
+
+        :param window: 窗口大小
+        :param min_periods: 最少非空值数 (默认 = window)
+        :param center: 是否居中窗口
+        :param win_type: 窗口类型 (boxcar/triang 等)
+        :param on: 按指定列的时间索引滚动 (暂不支持)
+        :param axis: 轴方向 (仅 0)
+        :param closed: 闭合方式
+        :return: _DataFrameRolling 窗口对象
+
+        Examples:
+            >>> df = DataFrame({'A': [1, 2, 3, 4]})
+            >>> df.rolling(2).mean()['A'].tolist()
+            [NaN, 1.5, 2.5, 3.5]
+        """
+        if on is not None:
+            raise NotImplementedError(
+                "DataFrame.rolling(on=...) 暂不支持，请先 set_index"
+            )
+        if window < 1:
+            raise ValueError("window must be >= 1")
+        return _DataFrameRolling(
+            self,
+            window=window,
+            min_periods=min_periods,
+            center=center,
+            win_type=win_type,
+            closed=closed,
+        )
+
+    def expanding(self, min_periods: int = 1) -> "_DataFrameExpanding":
+        """扩展窗口 (pandas 对齐)。
+
+        :param min_periods: 最少非空值数
+        :return: _DataFrameExpanding 窗口对象
+        """
+        if min_periods < 1:
+            raise ValueError("min_periods must be >= 1")
+        return _DataFrameExpanding(self, min_periods=min_periods)
+
+    def ewm(
+        self,
+        com: Optional[float] = None,
+        span: Optional[int] = None,
+        halflife: Optional[float] = None,
+        alpha: Optional[float] = None,
+        min_periods: int = 0,
+        adjust: bool = True,
+        ignore_na: bool = False,
+        axis: int = 0,
+        times=None,
+        method: str = "single",
+    ) -> "_DataFrameEWM":
+        """指数加权移动窗口 (pandas 对齐)。
+
+        :param com: 质心，alpha = 1/(com+1)
+        :param span: N 日跨度，alpha = 2/(span+1)
+        :param halflife: 半衰期
+        :param alpha: 平滑因子 (0 < alpha <= 1)
+        :param min_periods: 最少非空值数
+        :param adjust: 是否使用调整因子
+        :param ignore_na: 是否忽略缺失权重 (签名兼容)
+        :param axis: 轴方向 (仅 0)
+        :param times: 时间权重 (签名兼容)
+        :param method: 计算方法 (签名兼容)
+        :return: _DataFrameEWM 窗口对象
+        """
+        return _DataFrameEWM(
+            self,
+            alpha=alpha,
+            span=span,
+            halflife=halflife,
+            com=com,
+            adjust=adjust,
+        )
+
+    def resample(
+        self,
+        rule,
+        *args,
+        closed=None,
+        label=None,
+        convention=None,
+        kind=None,
+        loffset=None,
+        on=None,
+        level=None,
+        base: int = 0,
+        offset=None,
+        group_keys: bool = False,
+        **kwargs,
+    ) -> "_DataFrameResampler":
+        """时间序列重采样 (pandas 对齐)。
+
+        :param rule: 频率字符串 ('D'日, 'W'周, 'M'月, 'Y'年, 'H'时)
+        :param on: 按指定列重采样 (暂不支持)
+        :return: _DataFrameResampler 重采样对象，可调用 .sum()/.mean() 等
+        :raises TypeError: index 非 datetime
+        """
+        if on is not None:
+            raise NotImplementedError(
+                "DataFrame.resample(on=...) 暂不支持，请先 set_index"
+            )
+        index = self._index if self._index is not None else list(range(self._nrows))
+        if not all(isinstance(i, datetime) for i in index):
+            raise TypeError(
+                "resample requires a datetime index; use to_datetime() to convert"
+            )
+        return _DataFrameResampler(self, rule, index)
+
+    # ---------- 访问器 ----------
+
+    @property
+    def str(self) -> "_DataFrameStrAccessor":
+        """字符串访问器：对所有字符串列应用字符串方法，返回 DataFrame。"""
+        return _DataFrameStrAccessor(self)
+
+    @property
+    def dt(self) -> "_DataFrameDatetimeAccessor":
+        """日期时间访问器：对所有 datetime 列应用方法/属性，返回 DataFrame。"""
+        return _DataFrameDatetimeAccessor(self)
+
+    # ---------- Period / Timestamp 转换 ----------
+
+    def to_period(self, freq=None) -> "DataFrame":
+        """将 datetime 列/index 转为 Period 类型 (pandas 对齐)。
+
+        :param freq: 频率字符串；None 时使用列的频率 (如有)
+        :return: DataFrame
+
+        Examples:
+            >>> import datetime
+            >>> df = DataFrame({'A': [1, 2]},
+            ...                index=[datetime.datetime(2024, 1, 15),
+            ...                        datetime.datetime(2024, 3, 20)])
+            >>> df.to_period('M').index[0].freq
+            'M'
+        """
+        from ._scalars import Period
+
+        out: Dict[str, list] = {}
+        for c in self._columns:
+            s = self._get_column_as_series(c)
+            if str(s.dtype).startswith("datetime64"):
+                out[c] = [
+                    Period(v, freq) if v is not None else None for v in s.to_list()
+                ]
+            else:
+                out[c] = list(s.to_list())
+        index = list(self._index)
+        if index and all(isinstance(v, datetime) for v in index):
+            index = [Period(v, freq) for v in index]
+        result_df = DataFrame(out, index=index)
+        # Rust 层会把 Period 对象字符串化，写入对象缓存（混合类型列机制），
+        # 使 _get_column_as_series 能还原出 Period 对象（含 freq）
+        for c, vals in out.items():
+            if any(v is not None and hasattr(v, "freq") for v in vals):
+                result_df._col_dtypes[c] = "object"
+                result_df._col_object_values[c] = vals
+        return result_df
+
+    def to_timestamp(self, freq=None, how: str = "start") -> "DataFrame":
+        """将 Period 类型列/index 转回 datetime (to_period 的逆操作)。
+
+        :param freq: 频率字符串 (签名兼容)
+        :param how: 'start'/'end'/'middle' (签名兼容)
+        :return: DataFrame
+        """
+        out: Dict[str, list] = {}
+        for c in self._columns:
+            s = self._get_column_as_series(c)
+            vals = s.to_list()
+            if any(v is not None and hasattr(v, "freq") for v in vals):
+                out[c] = [
+                    getattr(v, "_value", v) if v is not None else None for v in vals
+                ]
+            else:
+                out[c] = list(vals)
+        index = list(self._index)
+        if index and all(hasattr(v, "freq") for v in index):
+            index = [getattr(v, "_value", v) for v in index]
+        return DataFrame(out, index=index)
+
+    # ---------- clip 变体 ----------
+
+    def clip_lower(
+        self, lower, axis: Optional[int] = None, inplace: bool = False, **kwargs
+    ) -> "DataFrame":
+        """仅按下限裁剪 (等价于 ``clip(lower=lower)``)。
+
+        :param lower: 下限
+        :param axis: 轴方向 (签名兼容)
+        :param inplace: 是否原地修改 (False 时返回新 DataFrame)
+        :return: DataFrame
+        """
+        result = self.clip(lower=lower)
+        if inplace:
+            self._reload(
+                {c: result._get_column_as_series(c).to_list() for c in self._columns}
+            )
+            return self
+        return result
+
+    def clip_upper(
+        self, upper, axis: Optional[int] = None, inplace: bool = False, **kwargs
+    ) -> "DataFrame":
+        """仅按上限裁剪 (等价于 ``clip(upper=upper)``)。
+
+        :param upper: 上限
+        :param axis: 轴方向 (签名兼容)
+        :param inplace: 是否原地修改 (False 时返回新 DataFrame)
+        :return: DataFrame
+        """
+        result = self.clip(upper=upper)
+        if inplace:
+            self._reload(
+                {c: result._get_column_as_series(c).to_list() for c in self._columns}
+            )
+            return self
+        return result
+
+    # ---------- 构造 / 导出补全 ----------
+
+    @classmethod
+    def from_items(cls, items, columns=None, dtype=None) -> "DataFrame":
+        """从 items 列表构造 DataFrame (pandas 对齐)。
+
+        :param items: 标量列表，或 (索引, 值) 元组列表
+        :param columns: 可选列名 (提供时每个 item 视为一行)
+        :param dtype: 可选数据类型
+        :return: DataFrame
+        """
+        items = list(items)
+        if columns is None:
+            if items and all(
+                isinstance(it, (list, tuple)) and len(it) == 2 for it in items
+            ):
+                # (索引, 值) 元组对 -> 单列 + 自定义索引
+                index = [it[0] for it in items]
+                values = [it[1] for it in items]
+                return cls({"0": values}, index=index, dtype=dtype)
+            return cls({"0": items}, dtype=dtype)
+        rows = [list(it) if isinstance(it, (list, tuple)) else [it] for it in items]
+        return cls(rows, columns=columns, dtype=dtype)
+
+    def to_xml(
+        self,
+        path_or_buffer=None,
+        index: bool = True,
+        root_name: str = "data",
+        row_name: str = "row",
+        **kwargs,
+    ):
+        """写入 XML 文件或返回 XML 字符串 (pandas 对齐)。
+
+        :param path_or_buffer: 文件路径；None 时返回字符串
+        :param index: 是否写入索引
+        :param root_name: 根节点名
+        :param row_name: 行节点名
+        :return: path_or_buffer 为 None 时返回 XML 字符串
+        """
+        from .io import to_xml as _to_xml
+
+        return _to_xml(
+            self,
+            path_or_buffer=path_or_buffer,
+            index=index,
+            root_name=root_name,
+            row_name=row_name,
+            **kwargs,
+        )
+
+
+# ============================================================================
+# DataFrame 级访问器与窗口包装器 (逐列委托 Series 实现)
+# ============================================================================
+
+
+class _DataFrameStrAccessor:
+    """DataFrame.str 访问器：对所有字符串列应用字符串方法，返回 DataFrame。"""
+
+    _DTYPES = ("str", "object", "string")
+
+    def __init__(self, df: DataFrame):
+        self._df = df
+
+    def _string_cols(self) -> List[str]:
+        return [
+            c
+            for c in self._df._columns
+            if str(self._df._get_column_as_series(c).dtype) in self._DTYPES
+        ]
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(f"_DataFrameStrAccessor has no attribute {name!r}")
+        df = self._df
+
+        def wrapper(*args, **kwargs):
+            cols = self._string_cols()
+            if not cols:
+                raise AttributeError(f"no string columns to apply {name!r}")
+            out: Dict[str, list] = {}
+            for c in cols:
+                s = df._get_column_as_series(c)
+                out[c] = getattr(s.str, name)(*args, **kwargs).to_list()
+            return DataFrame(out, index=list(df._index))
+
+        wrapper.__name__ = name
+        return wrapper
+
+
+class _DataFrameDatetimeAccessor:
+    """DataFrame.dt 访问器：对所有 datetime 列应用方法/属性，返回 DataFrame。"""
+
+    def __init__(self, df: DataFrame):
+        self._df = df
+
+    def _datetime_cols(self) -> List[str]:
+        return [
+            c
+            for c in self._df._columns
+            if str(self._df._get_column_as_series(c).dtype).startswith("datetime64")
+        ]
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(
+                f"_DataFrameDatetimeAccessor has no attribute {name!r}"
+            )
+        df = self._df
+        cols = self._datetime_cols()
+        if not cols:
+            raise AttributeError(f"no datetime columns to apply {name!r}")
+
+        def _build(out_cols):
+            out: Dict[str, list] = {}
+            for c in out_cols:
+                s = df._get_column_as_series(c)
+                result = getattr(s.dt, name)
+                out[c] = (
+                    result.to_list()
+                    if hasattr(result, "to_list")
+                    else [result] * len(df)
+                )
+            return DataFrame(out, index=list(df._index))
+
+        # 用样本列判断属性类型：属性 (如 year/month) 直接求值返回 DataFrame，
+        # 方法 (如 strftime) 返回可调用包装器
+        sample_attr = getattr(df._get_column_as_series(cols[0]).dt, name)
+        if not callable(sample_attr):
+            return _build(cols)
+
+        def wrapper(*args, **kwargs):
+            out: Dict[str, list] = {}
+            for c in cols:
+                s = df._get_column_as_series(c)
+                result = getattr(s.dt, name)(*args, **kwargs)
+                out[c] = (
+                    result.to_list()
+                    if hasattr(result, "to_list")
+                    else [result] * len(df)
+                )
+            return DataFrame(out, index=list(df._index))
+
+        wrapper.__name__ = name
+        return wrapper
+
+
+class _DataFrameWindowBase:
+    """DataFrame 窗口对象基类：逐列委托 Series 窗口，结果组装为 DataFrame。"""
+
+    _op_name: Optional[str] = None  # 对应 Series 上的窗口方法名
+
+    def __init__(self, df: DataFrame, **kwargs):
+        self._df = df
+        self._kwargs = kwargs
+
+    def _window_obj(self, series: Series):
+        return getattr(series, self._op_name)(**self._kwargs)
+
+    def _collect(self, op: str, *args, **kwargs) -> DataFrame:
+        out: Dict[str, list] = {}
+        for c in self._df._columns:
+            s = self._df._get_column_as_series(c)
+            w = self._window_obj(s)
+            out[c] = getattr(w, op)(*args, **kwargs).to_list()
+        return DataFrame(out, index=list(self._df._index))
+
+    # ---------- 聚合方法 ----------
+
+    def sum(self) -> DataFrame:
+        return self._collect("sum")
+
+    def mean(self) -> DataFrame:
+        return self._collect("mean")
+
+    def min(self) -> DataFrame:
+        return self._collect("min")
+
+    def max(self) -> DataFrame:
+        return self._collect("max")
+
+    def std(self) -> DataFrame:
+        return self._collect("std")
+
+    def var(self) -> DataFrame:
+        return self._collect("var")
+
+    def count(self) -> DataFrame:
+        return self._collect("count")
+
+    def median(self) -> DataFrame:
+        return self._collect("median")
+
+    def apply(self, func, *args, **kwargs) -> DataFrame:
+        return self._collect("apply", func, *args, **kwargs)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}[{self._kwargs}] on {list(self._df._columns)}"
+
+
+class _DataFrameRolling(_DataFrameWindowBase):
+    """DataFrame.rolling 窗口对象。"""
+
+    _op_name = "rolling"
+
+    def __init__(
+        self,
+        df: DataFrame,
+        window,
+        min_periods: Optional[int] = None,
+        center: bool = False,
+        win_type: Optional[str] = None,
+        closed: Optional[str] = None,
+    ):
+        super().__init__(
+            df,
+            window=window,
+            min_periods=min_periods,
+            center=center,
+            win_type=win_type,
+            closed=closed,
+        )
+        self._window = window
+
+    def quantile(self, q: float = 0.5) -> DataFrame:
+        return self._collect("quantile", q)
+
+    def skew(self) -> DataFrame:
+        return self._collect("skew")
+
+    def kurt(self) -> DataFrame:
+        return self._collect("kurt")
+
+    def sem(self) -> DataFrame:
+        return self._collect("sem")
+
+
+class _DataFrameExpanding(_DataFrameWindowBase):
+    """DataFrame.expanding 窗口对象。"""
+
+    _op_name = "expanding"
+
+    def __init__(self, df: DataFrame, min_periods: int = 1):
+        super().__init__(df, min_periods=min_periods)
+
+
+class _DataFrameEWM(_DataFrameWindowBase):
+    """DataFrame.ewm 窗口对象。"""
+
+    _op_name = "ewm"
+
+    def __init__(
+        self,
+        df: DataFrame,
+        alpha: Optional[float] = None,
+        span: Optional[int] = None,
+        halflife: Optional[float] = None,
+        com: Optional[float] = None,
+        adjust: bool = True,
+    ):
+        super().__init__(
+            df,
+            alpha=alpha,
+            span=span,
+            halflife=halflife,
+            com=com,
+            adjust=adjust,
+        )
+
+
+class _DataFrameResampler:
+    """DataFrame.resample 重采样对象：逐列委托 Series.resample，结果索引取首个列。"""
+
+    def __init__(self, df: DataFrame, rule: str, index: list):
+        self._df = df
+        self._rule = rule
+        self._index = index
+
+    def _collect(self, op: str, *args, **kwargs) -> DataFrame:
+        out: Dict[str, list] = {}
+        result_index: Optional[list] = None
+        for c in self._df._columns:
+            s = self._df._get_column_as_series(c)
+            r = s.resample(self._rule)
+            result = getattr(r, op)(*args, **kwargs)
+            out[c] = result.to_list()
+            if result_index is None and result._index is not None:
+                result_index = list(result._index)
+        if result_index is None:
+            result_index = list(self._df._index)
+        return DataFrame(out, index=result_index)
+
+    def sum(self) -> DataFrame:
+        return self._collect("sum")
+
+    def mean(self) -> DataFrame:
+        return self._collect("mean")
+
+    def min(self) -> DataFrame:
+        return self._collect("min")
+
+    def max(self) -> DataFrame:
+        return self._collect("max")
+
+    def median(self) -> DataFrame:
+        return self._collect("median")
+
+    def count(self) -> DataFrame:
+        return self._collect("count")
+
+    def std(self) -> DataFrame:
+        return self._collect("std")
+
+    def first(self) -> DataFrame:
+        return self._collect("first")
+
+    def last(self) -> DataFrame:
+        return self._collect("last")
+
+    def agg(self, func) -> DataFrame:
+        return self._collect("agg", func)

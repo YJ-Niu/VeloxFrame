@@ -67,6 +67,12 @@ class StringAccessor:
     def _wrap(self, values: list, name: str = None) -> "Series":
         from ..series import Series
 
+        # 布尔结果 (contains/startswith/isalnum 等) 不应强制 str 类型，
+        # 否则 True 会被字符串化为 "true"，与主流库布尔掩码语义不符
+        if any(isinstance(v, bool) for v in values) and all(
+            v is None or isinstance(v, bool) for v in values
+        ):
+            return Series(values, name=name or self._s.name, index=self._s._index)
         return Series(
             values, name=name or self._s.name, index=self._s._index, dtype="str"
         )

@@ -5574,3 +5574,284 @@ class Series:
             pass
 
         return "unknown"
+
+    # ---------- 相关性 / 协方差 (pandas 对齐) ----------
+
+    def corr(
+        self,
+        other,
+        method: str = "pearson",
+        min_periods: Optional[int] = None,
+    ) -> float:
+        """计算与 other 的相关系数 (pandas 对齐)。
+
+        :param other: Series 或 list
+        :param method: 'pearson' | 'spearman' | 'kendall'
+        :param min_periods: 最少有效观测对数 (默认 1)
+        :return: float (无效时返回 NaN)
+        """
+        other_vals = list(other.values) if isinstance(other, Series) else list(other)
+        if len(self) != len(other_vals):
+            raise ValueError("lengths must match")
+        if method not in ("pearson", "spearman", "kendall"):
+            raise ValueError(
+                f"method must be one of pearson/spearman/kendall, got {method!r}"
+            )
+        if min_periods is None:
+            min_periods = 1
+        pairs = [
+            (a, b)
+            for a, b in zip(self.values, other_vals)
+            if a is not None and b is not None and a == a and b == b
+        ]
+        if len(pairs) < min_periods:
+            return float("nan")
+        xs = [p[0] for p in pairs]
+        ys = [p[1] for p in pairs]
+        if method == "spearman":
+            xs = self._rank_values(xs)
+            ys = self._rank_values(ys)
+        elif method == "kendall":
+            return self._kendall_tau(xs, ys)
+        # pearson
+        n = len(xs)
+        mx = sum(xs) / n
+        my = sum(ys) / n
+        cov = sum((a - mx) * (b - my) for a, b in zip(xs, ys))
+        vx = sum((a - mx) ** 2 for a in xs) ** 0.5
+        vy = sum((b - my) ** 2 for b in ys) ** 0.5
+        if vx == 0 or vy == 0:
+            return float("nan")
+        return cov / (vx * vy)
+
+    def cov(
+        self,
+        other,
+        ddof: int = 1,
+        min_periods: Optional[int] = None,
+    ) -> float:
+        """计算与 other 的协方差 (pandas 对齐)。
+
+        :param other: Series 或 list
+        :param ddof: 自由度修正 (默认 1)
+        :param min_periods: 最少有效观测对数 (默认 1)
+        :return: float (无效时返回 NaN)
+        """
+        other_vals = list(other.values) if isinstance(other, Series) else list(other)
+        if len(self) != len(other_vals):
+            raise ValueError("lengths must match")
+        if min_periods is None:
+            min_periods = 1
+        pairs = [
+            (a, b)
+            for a, b in zip(self.values, other_vals)
+            if a is not None and b is not None and a == a and b == b
+        ]
+        if len(pairs) < max(min_periods, ddof + 1):
+            return float("nan")
+        xs = [p[0] for p in pairs]
+        ys = [p[1] for p in pairs]
+        n = len(xs)
+        mx = sum(xs) / n
+        my = sum(ys) / n
+        return sum((a - mx) * (b - my) for a, b in zip(xs, ys)) / (n - ddof)
+
+    @staticmethod
+    def _rank_values(vals: list) -> list:
+        """平均秩 (处理并列)，用于 spearman。"""
+        indexed = sorted(range(len(vals)), key=lambda i: vals[i])
+        ranks = [0.0] * len(vals)
+        i = 0
+        while i < len(indexed):
+            j = i
+            while j + 1 < len(indexed) and vals[indexed[j + 1]] == vals[indexed[i]]:
+                j += 1
+            avg_rank = (i + j) / 2.0 + 1.0
+            for k in range(i, j + 1):
+                ranks[indexed[k]] = avg_rank
+            i = j + 1
+        return ranks
+
+    @staticmethod
+    def _kendall_tau(xs: list, ys: list) -> float:
+        """Kendall tau-b。"""
+        n = len(xs)
+        conc = disc = 0
+        ties_x = 0
+        ties_y = 0
+        for i in range(n):
+            for j in range(i + 1, n):
+                dx = 1 if xs[i] < xs[j] else (-1 if xs[i] > xs[j] else 0)
+                dy = 1 if ys[i] < ys[j] else (-1 if ys[i] > ys[j] else 0)
+                if dx == 0:
+                    ties_x += 1
+                if dy == 0:
+                    ties_y += 1
+                conc += (dx * dy) > 0
+                disc += (dx * dy) < 0
+        denom = ((n * (n - 1) / 2 - ties_x) * (n * (n - 1) / 2 - ties_y)) ** 0.5
+        if denom == 0:
+            return float("nan")
+        return (conc - disc) / denom
+
+    # ---------- 形状 / 转换 ----------
+
+    def as_frame(self, name: Optional[str] = None, index=None) -> "_PyDataFrame":
+        """转为单列 DataFrame (pandas 对齐)。
+
+        :param name: 列名 (默认使用 Series.name)
+        :param index: 可选新索引
+        """
+        from .dataframe import DataFrame
+
+        col = (
+            name if name is not None else (self.name if self.name is not None else "0")
+        )
+        if index is None:
+            index = list(self._index) if self._index is not None else None
+        return DataFrame({col: list(self.values)}, index=index)
+
+    def ravel(self, order: str = "C") -> list:
+        """展平为一维列表 (Series 本身是一维，等价于 to_list)。
+
+        :param order: 内存顺序 (签名兼容)
+        """
+        return list(self.values)
+
+    def factorize(self, sort: bool = False, use_na_sentinel: bool = True):
+        """因子化，返回 (codes, uniques) 元组 (pandas 对齐)。
+
+        :param sort: 是否对 uniques 排序
+        :param use_na_sentinel: NA 是否映射为 -1 (False 时映射为新类别)
+        :return: (codes: list[int], uniques: list)
+        """
+        vals = list(self.values)
+        has_na = any(_is_missing(v) for v in vals)
+        uniques = list(dict.fromkeys(v for v in vals if not _is_missing(v)))
+        if sort:
+            uniques.sort()
+        code_map = {u: i for i, u in enumerate(uniques)}
+        na_code = -1 if (use_na_sentinel and has_na) else len(uniques)
+        if use_na_sentinel and not has_na:
+            na_code = -1
+        codes = [code_map[v] if not _is_missing(v) else na_code for v in vals]
+        if not use_na_sentinel and has_na:
+            uniques = [None] + uniques
+            codes = [c + 1 if c != na_code else 0 for c in codes]
+        return codes, uniques
+
+    # ---------- 索引 / 唯一性属性 ----------
+
+    @property
+    def is_unique(self) -> bool:
+        """所有非缺失值是否唯一。"""
+        vals = [v for v in self.values if not _is_missing(v)]
+        try:
+            return len(vals) == len(set(vals))
+        except TypeError:
+            return len(vals) == len(list(dict.fromkeys(vals)))
+
+    @property
+    def is_monotonic_increasing(self) -> bool:
+        """非缺失值是否单调不减。"""
+        vals = [v for v in self.values if not _is_missing(v)]
+        return all(a <= b for a, b in zip(vals, vals[1:]))
+
+    @property
+    def is_monotonic_decreasing(self) -> bool:
+        """非缺失值是否单调不增。"""
+        vals = [v for v in self.values if not _is_missing(v)]
+        return all(a >= b for a, b in zip(vals, vals[1:]))
+
+    def set_axis(
+        self, labels, axis: int = 0, level=None, copy: bool = True
+    ) -> _PySeries:
+        """设置轴标签。
+
+        :param labels: 标签列表 (axis=0) 或单元素 (axis=1 即 name)
+        :param axis: 0 表示 index，1 表示 name
+        :param level: 多级索引级别 (签名兼容)
+        :param copy: 是否复制
+        """
+        s = self.copy(deep=copy) if copy else self
+        labels = list(labels)
+        if axis == 0:
+            if len(labels) != len(self):
+                raise ValueError(
+                    f"Length of labels ({len(labels)}) must match the "
+                    f"length of the axis ({len(self)})"
+                )
+            s._index = labels
+        elif axis == 1:
+            if len(labels) != 1:
+                raise ValueError("Length of new names must be 1 for Series (axis=1)")
+            s.name = labels[0]
+        else:
+            raise ValueError(f"No axis named {axis} for object type Series")
+        return s
+
+    # ---------- asof ----------
+
+    def asof(self, where, mask=None):
+        """返回 <= where 的最后一个观测值 (要求索引单调)。
+
+        :param where: 索引标签或标签列表
+        :param mask: 布尔掩码 (签名兼容，True 位置参与查找)
+        :return: 标量或列表 (与 where 同形状)
+        """
+        idx = list(self._index) if self._index is not None else list(range(len(self)))
+        vals = list(self.values)
+        if mask is not None:
+            keep = [v for v, m in zip(vals, mask) if m]
+            keep_idx = [i for i, m in zip(idx, mask) if m]
+            idx, vals = keep_idx, keep
+        if not all(a <= b for a, b in zip(idx, idx[1:])):
+            raise ValueError("index must be monotonic for asof")
+        single = not isinstance(where, (list, tuple))
+        if single:
+            where = [where]
+        out = []
+        for w in where:
+            best = None
+            for i, v in zip(idx, vals):
+                try:
+                    if i <= w and v is not None:
+                        best = v
+                    else:
+                        break
+                except TypeError:
+                    break
+            out.append(best)
+        return out[0] if single else out
+
+    # ---------- Period / Timestamp 转换 ----------
+
+    def to_period(self, freq=None) -> _PySeries:
+        """将 datetime 序列转为 Period (pandas 对齐)。
+
+        :param freq: 频率字符串
+        :return: Series (dtype=object, 元素为 Period)
+        :raises TypeError: 非 datetime 序列
+        """
+        from ._scalars import Period
+
+        if not str(self.dtype).startswith("datetime64"):
+            raise TypeError(f"only valid with datetime dtype, got {self.dtype}")
+        vals = [
+            Period(v, freq) if v is not None and v == v else None for v in self.values
+        ]
+        return Series(vals, name=self.name, index=self._index)
+
+    def to_timestamp(self, freq=None, how: str = "start") -> _PySeries:
+        """将 Period 序列转回 datetime (to_period 的逆操作)。
+
+        :param freq: 频率字符串 (签名兼容)
+        :param how: 'start'/'end'/'middle' (签名兼容)
+        :return: Series
+        """
+        vals = list(self.values)
+        if not any(v is not None and hasattr(v, "freq") for v in vals):
+            # 已是 datetime (或非 datetime)，返回副本
+            return self.copy(deep=True)
+        out = [getattr(v, "_value", v) if v is not None else None for v in vals]
+        return Series(out, name=self.name, index=self._index, dtype="datetime64[us]")

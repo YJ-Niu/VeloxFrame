@@ -29,6 +29,7 @@ from ._datetime import (
 )
 from .dataframe import DataFrame
 from .indexes import crosstab, cut, get_dummies, Index, MultiIndex, qcut, RangeIndex
+from . import api
 from .io import (
     ExcelWriter,
     read_csv_chunked,
@@ -357,8 +358,14 @@ def concat(
         return _Series(all_values, index=all_index)
 
     if all(isinstance(o, DataFrame) for o in objs):
-        # 收集所有列名（保留首次出现顺序）
-        all_columns = list(dict.fromkeys(c for df in objs for c in df._columns))
+        # 收集列名：join="inner" 仅保留所有表共有列（按首表顺序），
+        # 否则取并集（保留首次出现顺序），与主流库默认 join='outer' 一致
+        if join == "inner":
+            all_columns = [
+                c for c in objs[0]._columns if all(c in df._columns for df in objs)
+            ]
+        else:
+            all_columns = list(dict.fromkeys(c for df in objs for c in df._columns))
         all_data = {
             col: list(
                 chain.from_iterable(
@@ -379,7 +386,7 @@ def concat(
 
 def isnull(obj):
     """检测缺失值 (None 或 NaN)。"""
-    if isinstance(obj, _Series):
+    if isinstance(obj, (Series, _Series)):
         return obj.isnull()
     elif isinstance(obj, DataFrame):
         return obj.isnull()
@@ -398,7 +405,7 @@ def isnull(obj):
 
 def notnull(obj):
     """检测非缺失值。"""
-    if isinstance(obj, _Series):
+    if isinstance(obj, (Series, _Series)):
         return obj.notnull()
     elif isinstance(obj, DataFrame):
         return obj.notnull()
@@ -422,7 +429,7 @@ notna = notnull
 
 def unique(values):
     """返回唯一值。"""
-    if isinstance(values, _Series):
+    if isinstance(values, (Series, _Series)):
         return values.unique()
     elif isinstance(values, list):
         # 利用 dict.fromkeys 保序去重（Python 3.7+ dict 保持插入顺序）
@@ -434,7 +441,7 @@ def value_counts(
     values, normalize: bool = False, sort: bool = True, ascending: bool = False
 ) -> _Series:
     """统计值出现次数。"""
-    if isinstance(values, _Series):
+    if isinstance(values, (Series, _Series)):
         return values.value_counts()
     elif isinstance(values, list):
         s = _Series(values)
@@ -507,7 +514,10 @@ __all__ = [
     "merge",
     "merge_asof",
     "concat",
+    "pivot",
     "pivot_table",
+    "melt",
+    "option_context",
     "wide_to_long",
     "lreshape",
     "isnull",
@@ -525,6 +535,7 @@ __all__ = [
     "NaT",
     "NA",
     "array",
+    "api",
     "test",
     "_Series",
     "_DataFrame",
@@ -535,6 +546,97 @@ __all__ = [
 # ============================================================================
 # 顶层缺失函数补全
 # ============================================================================
+
+
+def melt(
+    frame,
+    id_vars=None,
+    value_vars=None,
+    var_name: str = "variable",
+    value_name: str = "value",
+    col_level=0,
+    ignore_index: bool = True,
+):
+    """宽表转长表 (顶层入口，等价于 ``DataFrame.melt``)。
+
+    :param frame: 输入 DataFrame
+    :param id_vars: 标识符列 (str | list | None)
+    :param value_vars: 要展开为值的列 (str | list | None)
+    :param var_name: 存放原列名的列名
+    :param value_name: 存放原值的列名
+    :param col_level: 多级列时取用的层级 (仅用于签名兼容)
+    :param ignore_index: 是否重置索引
+    :return: DataFrame
+    """
+    if not isinstance(frame, DataFrame):
+        raise TypeError("melt requires a DataFrame")
+    return frame.melt(
+        id_vars=id_vars,
+        value_vars=value_vars,
+        var_name=var_name,
+        value_name=value_name,
+        ignore_index=ignore_index,
+    )
+
+
+def pivot(
+    table,
+    index=None,
+    columns=None,
+    values=None,
+):
+    """长表转宽表 (顶层入口，等价于 ``DataFrame.pivot``)。
+
+    :param table: 输入 DataFrame
+    :param index: 用作行索引的列 (str | None)
+    :param columns: 用作列的列 (str)
+    :param values: 填充值的列 (str | list | None)
+    :return: DataFrame
+    """
+    if not isinstance(table, DataFrame):
+        raise TypeError("pivot requires a DataFrame")
+    return table.pivot(index=index, columns=columns, values=values)
+
+
+class option_context:
+    """临时修改全局选项的上下文管理器。
+
+    进入时应用传入的键值对，退出时恢复原值。等价于
+    ``with rpd.option_context('display.max_rows', 10) as ctx: ...``。
+
+    Examples:
+        >>> with rpd.option_context("display.max_rows", 5, "display.width", 40):
+        ...     print(rpd.get_option("display.max_rows"))
+        5
+    """
+
+    def __init__(self, *args):
+        # 支持 option_context("a.b", 1, "c.d", 2) 成对传入
+        if len(args) % 2 != 0:
+            raise ValueError(
+                "option_context requires key-value pairs "
+                "(an even number of arguments)"
+            )
+        self._pairs = [(args[i], args[i + 1]) for i in range(0, len(args), 2)]
+        self._saved: Dict[str, Any] = {}
+
+    def __enter__(self):
+        for pat, value in self._pairs:
+            try:
+                self._saved[pat] = get_option(pat)
+            except Exception:
+                self._saved[pat] = None
+            set_option(pat, value)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for pat, value in self._pairs:
+            # 若期间被删除则恢复为 None（不存在即视为默认）
+            try:
+                set_option(pat, self._saved.get(pat))
+            except Exception:
+                pass
+        return False
 
 
 # ============================================================================
