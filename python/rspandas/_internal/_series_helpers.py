@@ -143,6 +143,42 @@ def _dtype_to_str(dtype) -> str:
     return str(dtype).lower()
 
 
+def _is_safe_astype(src_dtype: str, target: str) -> bool:
+    """判断 astype 转换是否"安全"。
+
+    安全的转换指 Rust 层执行时不会静默产生新的 None 值，
+    行为与 Python 层 ``int(v)`` / ``float(v)`` / ``bool(v)`` / ``str(v)`` 一致。
+
+    不安全的转换（如 string -> int / float / bool、float -> int）涉及解析或
+    截断，可能在 Python 层抛出 ValueError/TypeError，而 Rust 层静默返回 None。
+    为保留 Python 的 raise 行为，此类转换回退到 Python 实现。
+    """
+    s = src_dtype.lower()
+    t = target.lower()
+    if s == t:
+        return True
+    # int/uint 源：所有数值/bool/字符串转换都安全（不会失败）
+    if s.startswith("int") or s.startswith("uint"):
+        return (
+            t.startswith("int")
+            or t.startswith("uint")
+            or t.startswith("float")
+            or t == "bool"
+            or t in ("object", "str", "string")
+        )
+    # float 源：-> float / bool / str 安全；-> int 不安全（NaN/inf 在 Python 会抛错）
+    if s.startswith("float"):
+        return t.startswith("float") or t == "bool" or t in ("object", "str", "string")
+    # bool 源：所有目标都安全
+    if s == "bool":
+        return True
+    # string/object 源：仅 -> string/object 安全；解析数值/bool 不安全
+    if s in ("object", "str", "string"):
+        return t in ("object", "str", "string")
+    # 其他（category / datetime64 / timedelta64 等）：保守起见返回 False
+    return False
+
+
 def _infer_dtype(values: list) -> str:
     """根据数据推断 dtype（对齐 pandas 的行为）。"""
     if not values:

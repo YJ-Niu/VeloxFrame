@@ -186,6 +186,19 @@ impl PyDataFrame {
         PyDataFrame { inner }
     }
 
+    /// 标量填充所有列：依据每列 dtype 自动选择 fillna_xxx，单次并行遍历。
+    /// 标量值预先 extract 为 4 个候选类型，避免每列重复 extract Python 对象。
+    fn fillna_scalar<'py>(&self, py: Python<'py>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        // 一次 extract 多个候选类型，匹配成功则记录
+        let v_i64: Option<i64> = value.extract::<i64>().ok();
+        let v_f64: Option<f64> = value.extract::<f64>().ok();
+        let v_bool: Option<bool> = value.extract::<bool>().ok();
+        let v_str: Option<String> = value.extract::<String>().ok();
+        let v_str_ref: Option<&str> = v_str.as_deref();
+        let inner = py.detach(|| self.inner.fillna_scalar(v_i64, v_f64, v_bool, v_str_ref));
+        Ok(PyDataFrame { inner })
+    }
+
     // ---------- 列并行批量方法（Python for 循环 → Rust rayon 并行） ----------
 
     /// 所有列并行 ffill（一次调用替代 Python 逐列 for 循环）

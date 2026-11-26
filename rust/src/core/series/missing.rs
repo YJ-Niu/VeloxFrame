@@ -27,6 +27,21 @@ impl Series {
         }
     }
 
+    /// 删除缺失值，同时返回被保留行的原始位置索引。
+    ///
+    /// 与 :meth:`dropna` 等价，但额外返回 ``Vec<usize>``，避免 Python 层
+    /// 二次遍历 mask 来重建索引，消除 Python 循环开销。
+    pub fn dropna_with_index(&self) -> (Series, Vec<usize>) {
+        let mask = self.data.notnull();
+        let indices: Vec<usize> = mask
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &keep)| if keep { Some(i) } else { None })
+            .collect();
+        let new_series = self.filter(&mask);
+        (new_series, indices)
+    }
+
     pub fn fillna_i64(&self, v: i64) -> Series {
         Self {
             name: self.name.clone(),

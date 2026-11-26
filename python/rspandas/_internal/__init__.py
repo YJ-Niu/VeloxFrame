@@ -20,6 +20,7 @@ from ._series_helpers import (
     _infer_dtype,
     _is_missing,
     _is_range_index,
+    _is_safe_astype,
     _to_python_list,
     _to_python_list_and_index,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "_is_missing",
     "_is_ndarray",
     "_is_range_index",
+    "_is_safe_astype",
     "_normalize_dtype",
     "_to_python_list",
     "_to_python_list_and_index",

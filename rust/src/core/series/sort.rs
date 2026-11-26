@@ -261,6 +261,39 @@ impl Series {
             .collect()
     }
 
+    /// 返回排序后的位置索引数组（等价于 numpy.argsort）。
+    ///
+    /// - 非 None / 非 NaN 值先按 ascending 排序
+    /// - None / NaN 统一放在末尾，保持原顺序
+    /// - 稳定排序：相同值按原索引顺序返回
+    /// - 不支持的 dtype（Categorical）返回空 Vec（由 Python 层回退）
+    pub fn argsort(&self, ascending: bool) -> Vec<usize> {
+        let n = self.len();
+        if n == 0 {
+            return Vec::new();
+        }
+        // 收集 (原索引, 值, 是否缺失)，按值稳定排序后输出原索引
+        let mut indexed_non_none: Vec<(usize, f64)> = Vec::new();
+        let mut null_indices: Vec<usize> = Vec::new();
+        let f64_vals = self.as_f64_vec();
+        for (i, x) in f64_vals.iter().enumerate() {
+            match x {
+                Some(v) if !v.is_nan() => indexed_non_none.push((i, *v)),
+                _ => null_indices.push(i),
+            }
+        }
+        // 稳定排序：先按值；ascending=false 时反序（稳定，相同值保持原顺序）
+        indexed_non_none.sort_by(|a, b| {
+            let ord = a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal);
+            if ascending { ord } else { ord.reverse() }
+        });
+        indexed_non_none
+            .into_iter()
+            .map(|(i, _)| i)
+            .chain(null_indices)
+            .collect()
+    }
+
     /// 返回最小/最大 n 个元素在原 Series 中的位置（索引）。
     ///
     /// - `n`: 要返回的元素数量
@@ -331,5 +364,56 @@ impl Series {
             _ => indexed.into_iter().take(n).map(|(i, _)| i).collect(),
         };
         selected
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_argsort_int_ascending() {
+        let s = Series::new_int(None, vec![Some(30), Some(10), Some(20), Some(10)]);
+        let r = s.argsort(true);
+        // 升序：第一个 10 (idx=1), 第二个 10 (idx=3), 20 (idx=2), 30 (idx=0)
+        assert_eq!(r, vec![1, 3, 2, 0]);
+    }
+
+    #[test]
+    fn test_argsort_int_descending() {
+        let s = Series::new_int(None, vec![Some(30), Some(10), Some(20), Some(10)]);
+        let r = s.argsort(false);
+        // 降序：30 (idx=0), 20 (idx=2), 第一个 10 (idx=1), 第二个 10 (idx=3)
+        assert_eq!(r, vec![0, 2, 1, 3]);
+    }
+
+    #[test]
+    fn test_argsort_with_none_at_end() {
+        let s = Series::new_int(None, vec![Some(3), None, Some(1), Some(2), None]);
+        let r = s.argsort(true);
+        // 升序：1, 2, 3, None(原顺序), None(原顺序)
+        assert_eq!(r, vec![2, 4, 0, 1, 3]);
+    }
+
+    #[test]
+    fn test_argsort_float_with_nan() {
+        let s = Series::new_float(None, vec![Some(2.0), Some(f64::NAN), Some(1.0), Some(3.0)]);
+        let r = s.argsort(true);
+        // 升序：1.0 (idx=2), 2.0 (idx=0), 3.0 (idx=3), NaN (idx=1)
+        assert_eq!(r, vec![2, 0, 3, 1]);
+    }
+
+    #[test]
+    fn test_argsort_empty() {
+        let s = Series::new_int(None, vec![]);
+        assert_eq!(s.argsort(true), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn test_argsort_bool_ascending() {
+        let s = Series::new_bool(None, vec![Some(true), Some(false), Some(true)]);
+        let r = s.argsort(true);
+        // 升序：false (idx=1), 第一个 true (idx=0), 第二个 true (idx=2)
+        assert_eq!(r, vec![1, 0, 2]);
     }
 }
