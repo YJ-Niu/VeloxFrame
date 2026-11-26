@@ -331,6 +331,173 @@ class SeriesGroupBy:
         """分组后向填充。"""
         return self.fillna(method="bfill", limit=limit)
 
+    def pad(self, limit=None) -> Series:
+        """前向填充别名 (主流库对齐)。"""
+        return self.ffill(limit=limit)
+
+    def backfill(self, limit=None) -> Series:
+        """后向填充别名 (主流库对齐)。"""
+        return self.bfill(limit=limit)
+
+    @property
+    def as_index(self) -> bool:
+        """分组键是否放入索引 (主流库对齐)。"""
+        return self._as_index
+
+    @as_index.setter
+    def as_index(self, value: bool):
+        self._as_index = value
+
+    @property
+    def observed(self) -> bool:
+        """Categorical 分组是否仅用已观测值 (主流库对齐)。"""
+        return self._observed
+
+    @observed.setter
+    def observed(self, value: bool):
+        self._observed = value
+
+    def pct_change(self, periods: int = 1, fill_method=None) -> Series:
+        """分组百分比变化 (主流库对齐)。
+
+        :param periods: 比较周期
+        :param fill_method: 未实现 (签名兼容)
+        """
+        if fill_method is not None:
+            raise NotImplementedError("fill_method not supported")
+        result = [None] * len(self._s)
+        for items in self._groups.values():
+            for j, (i, v) in enumerate(items):
+                if j >= periods and v is not None:
+                    prev = items[j - periods][1]
+                    if prev not in (None, 0):
+                        result[i] = (v - prev) / prev
+        return Series(result, name=self._s.name, index=self._s._index)
+
+    def interpolate(self, method: str = "linear", limit=None, **kwargs) -> Series:
+        """分组内插值 (主流库对齐，仅支持 linear)。
+
+        :param method: 插值方法 (仅 'linear')
+        :param limit: 未实现 (签名兼容)
+        """
+        if method != "linear":
+            raise NotImplementedError(f"only method='linear' supported, got {method!r}")
+        if limit is not None:
+            raise NotImplementedError("limit not supported")
+        values = list(self._s.values)
+        result = list(values)
+        for items in self._groups.values():
+            nums = [
+                (j, v)
+                for j, (_, v) in enumerate(items)
+                if v is not None and isinstance(v, (int, float))
+            ]
+            for m in range(len(nums) - 1):
+                (j0, v0), (j1, v1) = nums[m], nums[m + 1]
+                gap = j1 - j0
+                if gap <= 1:
+                    continue
+                for j in range(j0 + 1, j1):
+                    i = items[j][0]
+                    if result[i] is None:
+                        frac = (j - j0) / gap
+                        result[i] = v0 + (v1 - v0) * frac
+        return Series(result, name=self._s.name, index=self._s._index)
+
+    def corrwith(self, other) -> Series:
+        """与另一 Series 的分组 Pearson 相关系数 (主流库对齐)。
+
+        :param other: 等长 Series
+        """
+        other_vals = list(other.values)
+
+        def _corr(key, items):
+            pairs = [
+                (v, other_vals[i])
+                for i, v in items
+                if v is not None and other_vals[i] is not None
+            ]
+            if len(pairs) < 2:
+                return None
+            xs = [p[0] for p in pairs]
+            ys = [p[1] for p in pairs]
+            n = len(pairs)
+            mx = sum(xs) / n
+            my = sum(ys) / n
+            cov = sum((x - mx) * (y - my) for x, y in pairs)
+            vx = sum((x - mx) ** 2 for x in xs)
+            vy = sum((y - my) ** 2 for y in ys)
+            if vx == 0 or vy == 0:
+                return None
+            return cov / (vx * vy) ** 0.5
+
+        return self._build_grouped_series(_corr)
+
+    def value_counts(
+        self, normalize: bool = False, sort: bool = True, ascending: bool = False
+    ) -> Series:
+        """分组值计数：结果索引为 (分组键, 值) MultiIndex (主流库对齐)。
+
+        :param normalize: True 时输出相对频率
+        :param sort: 是否按计数排序
+        :param ascending: 升序
+        """
+        from ..indexes import MultiIndex
+
+        tuples = []
+        counts = []
+        keys = self._sorted_keys(self._groups.keys())
+        for key in keys:
+            vc = {}
+            for _, v in self._groups[key]:
+                vc[v] = vc.get(v, 0) + 1
+            entries = list(vc.items())
+            if sort:
+                entries.sort(key=lambda kv: kv[1], reverse=not ascending)
+            for v, c in entries:
+                tuples.append((key, v))
+                counts.append(c)
+        if normalize:
+            total = sum(counts)
+            counts = [c / total if total else None for c in counts]
+        group_name = self._by if isinstance(self._by, str) else None
+        mi = MultiIndex.from_tuples(tuples, names=[group_name, self._s.name])
+        return Series(counts, index=mi)
+
+    def rolling(self, window, min_periods=None, center: bool = False, **kwargs):
+        """分组滚动窗口 (主流库对齐)。"""
+
+        def factory(s):
+            return s.rolling(window, min_periods=min_periods, center=center, **kwargs)
+
+        return _SeriesGroupbyWindow(self, factory)
+
+    def expanding(self, min_periods: int = 1):
+        """分组扩展窗口 (主流库对齐)。"""
+
+        def factory(s):
+            return s.expanding(min_periods=min_periods)
+
+        return _SeriesGroupbyWindow(self, factory)
+
+    def ewm(
+        self,
+        com=None,
+        span=None,
+        halflife=None,
+        alpha=None,
+        adjust: bool = True,
+        **kwargs,
+    ):
+        """分组指数加权窗口 (主流库对齐)。"""
+
+        def factory(s):
+            return s.ewm(
+                alpha=alpha, span=span, halflife=halflife, com=com, adjust=adjust
+            )
+
+        return _SeriesGroupbyWindow(self, factory)
+
     def head(self, n: int = 5) -> Series:
         """返回每个分组的前 n 个值。
 
@@ -804,6 +971,51 @@ class SeriesGroupBy:
         raise TypeError(f"agg: unsupported func type {type(func).__name__}")
 
     aggregate = agg
+
+
+class _SeriesGroupbyWindow:
+    """SeriesGroupBy rolling/expanding/ewm 的窗口结果对象 (主流库对齐)。
+
+    每个分组内独立做窗口计算，结果按原 Series 索引顺序重组。
+    """
+
+    def __init__(self, groupby, window_factory):
+        self._gb = groupby
+        self._window_factory = window_factory
+
+    def _collect(self, op: str, *args) -> Series:
+        result = [None] * len(self._gb._s)
+        for items in self._gb._groups.values():
+            sub = Series([v for _, v in items], name=self._gb._s.name)
+            w = self._window_factory(sub)
+            res = list(getattr(w, op)(*args).values)
+            for (i, _), r in zip(items, res):
+                result[i] = r
+        return Series(result, name=self._gb._s.name, index=self._gb._s._index)
+
+    def sum(self) -> Series:
+        return self._collect("sum")
+
+    def mean(self) -> Series:
+        return self._collect("mean")
+
+    def min(self) -> Series:
+        return self._collect("min")
+
+    def max(self) -> Series:
+        return self._collect("max")
+
+    def std(self) -> Series:
+        return self._collect("std")
+
+    def var(self) -> Series:
+        return self._collect("var")
+
+    def count(self) -> Series:
+        return self._collect("count")
+
+    def median(self) -> Series:
+        return self._collect("median")
 
 
 def __getattr__(name: str):

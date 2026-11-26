@@ -142,6 +142,14 @@ class Rolling:
         return self._apply(f)
 
     def min(self) -> _PySeries:
+        # 优先调用 Rust 层（仅支持默认参数: center=False, win_type=None, closed=right）
+        if not self._center and self._win_type is None and self._closed == "right":
+            try:
+                result = self._s._inner.rolling_min(self._window, self._min_periods)
+                return Series(result, name=self._s.name, index=self._s._index)
+            except Exception:
+                pass
+
         def f(win, w=None):
             nums = [v for v in win if v is not None]
             return min(nums) if nums else None
@@ -149,6 +157,14 @@ class Rolling:
         return self._apply(f)
 
     def max(self) -> _PySeries:
+        # 优先调用 Rust 层（仅支持默认参数: center=False, win_type=None, closed=right）
+        if not self._center and self._win_type is None and self._closed == "right":
+            try:
+                result = self._s._inner.rolling_max(self._window, self._min_periods)
+                return Series(result, name=self._s.name, index=self._s._index)
+            except Exception:
+                pass
+
         def f(win, w=None):
             nums = [v for v in win if v is not None]
             return max(nums) if nums else None

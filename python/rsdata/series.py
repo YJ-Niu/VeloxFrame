@@ -3911,6 +3911,43 @@ class Series:
             g2 += 3
         return g2
 
+    def kurtosis(self, *args, **kwargs) -> float:
+        """kurt() 的别名 (pandas 对齐)。"""
+        return self.kurt(*args, **kwargs)
+
+    def transpose(self) -> "Series":
+        """T 的别名 (pandas 对齐)。"""
+        return self.T
+
+    def swapaxes(self, axis1: int = 0, axis2: int = 1) -> "Series":
+        """Series 为一维，等价于 copy (pandas 对齐)。"""
+        return self.copy()
+
+    def pipe(self, func, *args, **kwargs):
+        """将本 Series 传入 func (pandas 对齐)。
+
+        :param func: 可调用对象，或可调用对象列表 (依次应用)
+        """
+        if isinstance(func, (list, tuple)) and all(callable(f) for f in func):
+            result = self
+            for f in func:
+                result = f(result)
+            return result
+        return func(self, *args, **kwargs)
+
+    def bool(self) -> bool:
+        """转为 bool (仅单元素 Series，pandas 对齐)。"""
+        if len(self) != 1:
+            raise ValueError("can only convert a Series of length 1 to a scalar")
+        v = self.values[0]
+        return False if v is None else bool(v)
+
+    def item(self):
+        """返回唯一元素为 Python 标量 (仅单元素 Series，pandas 对齐)。"""
+        if len(self) != 1:
+            raise ValueError("can only convert an array of size 1 to a Python scalar")
+        return self.values[0]
+
     # ---------- 过滤 ----------
 
     def filter(self, mask: list) -> _PySeries:
@@ -4941,6 +4978,59 @@ class Series:
             **kwargs,
         )
 
+    def to_pickle(self, path, **kwargs) -> None:
+        """将 Series 写入 Pickle 文件 (委托 io 层)。"""
+        from .io import to_pickle as _to_pickle
+
+        _to_pickle(self, path, **kwargs)
+
+    def to_sql(
+        self,
+        name,
+        conn,
+        if_exists: str = "fail",
+        index: bool = True,
+        **kwargs,
+    ):
+        """将 Series 写入数据库 (转单列表格后委托 io 层)。"""
+        from .dataframe import DataFrame
+
+        col_name = self.name if self.name is not None else "0"
+        df = DataFrame({col_name: list(self.values)}, index=self._index)
+        return df.to_sql(name, conn, if_exists=if_exists, index=index, **kwargs)
+
+    def to_orc(self, path, **kwargs) -> None:
+        """将 Series 写入 ORC 文件 (转单列表格后委托 io 层)。"""
+        from .dataframe import DataFrame
+
+        col_name = self.name if self.name is not None else "0"
+        df = DataFrame({col_name: list(self.values)}, index=self._index)
+        return df.to_orc(path, **kwargs)
+
+    def to_stata(self, path, **kwargs) -> None:
+        """将 Series 写入 Stata 文件 (转单列表格后委托 io 层)。"""
+        from .dataframe import DataFrame
+
+        col_name = self.name if self.name is not None else "0"
+        df = DataFrame({col_name: list(self.values)}, index=self._index)
+        return df.to_stata(path, **kwargs)
+
+    def to_hdf(self, path, key: str = "data", **kwargs) -> None:
+        """将 Series 写入 HDF5 文件 (转单列表格后委托 io 层)。"""
+        from .dataframe import DataFrame
+
+        col_name = self.name if self.name is not None else "0"
+        df = DataFrame({col_name: list(self.values)}, index=self._index)
+        return df.to_hdf(path, key=key, **kwargs)
+
+    def to_clipboard(self, excel: bool = True, **kwargs) -> None:
+        """将 Series 复制到系统剪贴板 (转单列表格后委托 io 层)。"""
+        from .dataframe import DataFrame
+
+        col_name = self.name if self.name is not None else "0"
+        df = DataFrame({col_name: list(self.values)}, index=self._index)
+        return df.to_clipboard(excel=excel, **kwargs)
+
     def to_string(
         self,
         buf=None,
@@ -5823,6 +5913,205 @@ class Series:
                     break
             out.append(best)
         return out[0] if single else out
+
+    # ---------- 时间截面与时间过滤 ----------
+
+    def _as_datetime_index(self) -> list:
+        """确保索引为 datetime 列表 (字符串索引自动解析)。"""
+        idx = list(self._index) if self._index is not None else list(range(len(self)))
+        if all(isinstance(i, datetime) for i in idx if i is not None):
+            return idx
+        from ._datetime.datetime import to_datetime as _to_datetime
+
+        parsed = _to_datetime(idx)
+        vals = list(parsed.values) if hasattr(parsed, "values") else list(parsed)
+        if not all(isinstance(i, datetime) for i in vals):
+            raise TypeError("requires a datetime index")
+        return vals
+
+    def _parse_time_of_day(self, t):
+        """解析时刻 ('HH:MM[:SS]' / datetime.time / datetime)。"""
+        from datetime import time as _time
+
+        if isinstance(t, _time):
+            return t
+        if isinstance(t, datetime):
+            return t.time()
+        if isinstance(t, str):
+            for fmt in ("%H:%M:%S", "%H:%M"):
+                try:
+                    return datetime.strptime(t, fmt).time()
+                except ValueError:
+                    continue
+            raise ValueError(f"cannot parse time: {t!r}")
+        raise TypeError(f"unsupported time type: {type(t).__name__}")
+
+    def _period_key_fn(self, periods):
+        """按周期分组键函数：None=年, 'M'=月, 'D'=日, 'H'=小时。"""
+        if periods is None:
+            return lambda i: (i.year,)
+        p = str(periods).upper()
+        if p in ("M", "MS"):
+            return lambda i: (i.year, i.month)
+        if p in ("D", "B"):
+            return lambda i: (i.year, i.month, i.day)
+        if p in ("H", "T"):
+            return lambda i: (i.year, i.month, i.day, i.hour)
+        if p in ("A", "Y"):
+            return lambda i: (i.year,)
+        raise ValueError(f"unsupported period: {periods!r}")
+
+    def first(self, periods=None) -> "Series":
+        """返回每个周期的第一个观测 (要求 datetime 索引，pandas 对齐)。
+
+        :param periods: 周期字符串 ('M'月/'D'日/'H'时)；None 按年
+        """
+        idx = self._as_datetime_index()
+        vals = list(self.values)
+        key_fn = self._period_key_fn(periods)
+        groups: Dict[Any, list] = {}
+        order: list = []
+        for i, v in zip(idx, vals):
+            if i is None:
+                continue
+            k = key_fn(i)
+            if k not in groups:
+                groups[k] = []
+                order.append(k)
+            groups[k].append((i, v))
+        return type(self)(
+            [groups[k][0][1] for k in order],
+            name=self.name,
+            index=[groups[k][0][0] for k in order],
+        )
+
+    def last(self, periods=None) -> "Series":
+        """返回每个周期的最后一个观测 (要求 datetime 索引，pandas 对齐)。
+
+        :param periods: 周期字符串 ('M'月/'D'日/'H'时)；None 按年
+        """
+        idx = self._as_datetime_index()
+        vals = list(self.values)
+        key_fn = self._period_key_fn(periods)
+        groups: Dict[Any, list] = {}
+        order: list = []
+        for i, v in zip(idx, vals):
+            if i is None:
+                continue
+            k = key_fn(i)
+            if k not in groups:
+                groups[k] = []
+                order.append(k)
+            groups[k].append((i, v))
+        return type(self)(
+            [groups[k][-1][1] for k in order],
+            name=self.name,
+            index=[groups[k][-1][0] for k in order],
+        )
+
+    def at_time(self, time, axis: int = 0) -> "Series":
+        """按索引的时刻筛选 (pandas 对齐)。
+
+        :param time: 'HH:MM[:SS]' 字符串 (按小时:分钟匹配) 或 (start, end) 区间
+        """
+        idx = self._as_datetime_index()
+        vals = list(self.values)
+        if isinstance(time, (list, tuple)):
+            t0 = self._parse_time_of_day(time[0])
+            t1 = self._parse_time_of_day(time[1])
+            mask = [i is not None and t0 <= i.time() <= t1 for i in idx]
+        else:
+            t0 = self._parse_time_of_day(time)
+            mask = [
+                i is not None and i.hour == t0.hour and i.minute == t0.minute
+                for i in idx
+            ]
+        return type(self)(
+            [v for v, m in zip(vals, mask) if m],
+            name=self.name,
+            index=[i for i, m in zip(idx, mask) if m],
+        )
+
+    def between_time(
+        self, start_time, end_time, inclusive: str = "both", axis: int = 0
+    ) -> "Series":
+        """筛选索引时刻落在 [start_time, end_time] 内的行 (pandas 对齐)。
+
+        :param start_time: 起始时刻 'HH:MM[:SS]'
+        :param end_time: 结束时刻 'HH:MM[:SS]'
+        :param inclusive: 'both'/'left'/'right'/'neither'
+        """
+        idx = self._as_datetime_index()
+        vals = list(self.values)
+        s = self._parse_time_of_day(start_time)
+        e = self._parse_time_of_day(end_time)
+
+        def ok(t) -> bool:
+            if inclusive in ("both", "both_closed"):
+                return s <= t <= e
+            if inclusive in ("left", "left_closed"):
+                return s <= t < e
+            if inclusive in ("right", "right_closed"):
+                return s < t <= e
+            return s < t < e
+
+        mask = [i is not None and ok(i.time()) for i in idx]
+        return type(self)(
+            [v for v, m in zip(vals, mask) if m],
+            name=self.name,
+            index=[i for i, m in zip(idx, mask) if m],
+        )
+
+    def slice_shift(self, periods: int = 1, axis: int = 0) -> "Series":
+        """相对切片起点平移 periods 个位置 (pandas 对齐，等价 shift)。"""
+        return self.shift(periods)
+
+    def xs(self, key, level=0, drop_level: bool = True) -> "Series":
+        """按索引标签选取横截面 (pandas 对齐，简化版：标量或列表键)。"""
+        idx = list(self._index) if self._index is not None else list(range(len(self)))
+        vals = list(self.values)
+        if isinstance(key, (list, tuple, set)):
+            keys = set(key)
+            mask = [i in keys for i in idx]
+        else:
+            mask = [i == key for i in idx]
+        return type(self)(
+            [v for v, m in zip(vals, mask) if m],
+            name=self.name,
+            index=[i for i, m in zip(idx, mask) if m],
+        )
+
+    def update(self, other) -> None:
+        """原地更新：用 other 的非缺失值填充本 Series 的缺失位置 (按索引对齐，pandas 对齐)。"""
+        idx = list(self._index) if self._index is not None else list(range(len(self)))
+        if isinstance(other, type(self)):
+            other_idx = (
+                list(other._index) if other._index is not None else list(range(len(other)))
+            )
+            other_map: Optional[Dict[Any, Any]] = dict(zip(other_idx, other.values))
+        elif isinstance(other, dict):
+            other_map = other
+        else:
+            other_map = None
+        new_vals = []
+        for i, v in zip(idx, self.values):
+            if _is_missing(v):
+                ov = other_map.get(i) if other_map is not None else other
+                if not _is_missing(ov):
+                    v = ov
+            new_vals.append(v)
+        # 重建并同步全部内部存储 (object 缓存/dtype/dt 缓存不被 _apply_inplace 覆盖)
+        result = type(self)(new_vals, name=self.name, index=idx)
+        self._inner = result._inner
+        self._index = result._index
+        self._dtype_str = result._dtype_str
+        self._object_values = result._object_values
+        self._dt_values = result._dt_values
+        self._dt_tz = result._dt_tz
+        self._period_freq = result._period_freq
+        self._td_values = result._td_values
+        self._cached_index_ref = None
+        return self
 
     # ---------- Period / Timestamp 转换 ----------
 

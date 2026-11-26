@@ -2002,13 +2002,12 @@ class DataFrame:
                 if not conflict:
                     left_idx = self._columns.index(on)
                     right_idx = right._columns.index(on)
-                    result_inner = self._inner.merge(
+                    # 保类型合并：Rust 层直接按行索引 gather 源列，
+                    # 输出列保留 Int/Float/Bool/String/Categorical 原始类型
+                    result_inner = self._inner.merge_typed(
                         right._inner, left_idx, right_idx, how
                     )
-                    result_df = DataFrame._from_inner(result_inner)
-                    # Rust merge 层统一输出字符串列，按源列 dtype 还原数值类型
-                    result_df = self._restore_merge_dtypes(result_df, right)
-                    return result_df
+                    return DataFrame._from_inner(result_inner)
             except Exception:
                 pass
 
@@ -2026,48 +2025,6 @@ class DataFrame:
             indicator,
             validate,
         )
-
-    def _restore_merge_dtypes(
-        self, result_df: "DataFrame", right: "DataFrame"
-    ) -> "DataFrame":
-        """按源列 dtype 还原 Rust merge 输出中丢失的数值类型。
-
-        Rust 合并层以字符串表示所有列值；本方法将源列为 int64/float64 的
-        结果列重新解析为数值（缺失值保持 None）。
-        """
-        # 结果列 -> 源列 dtype（左表列优先，右表非键列补充）
-        src_dtype: Dict[str, str] = {}
-        for c in self._columns:
-            try:
-                src_dtype[c] = self._get_column_as_series(c).dtype
-            except Exception:
-                pass
-        for c in right._columns:
-            if c not in src_dtype:
-                try:
-                    src_dtype[c] = right._get_column_as_series(c).dtype
-                except Exception:
-                    pass
-        new_dict: Dict[str, list] = {}
-        for c in result_df._columns:
-            vals = list(result_df._inner.get_column(c).values)
-            dt = src_dtype.get(c)
-            if dt in ("int64", "float64"):
-                parsed = []
-                for v in vals:
-                    if v is None or (isinstance(v, str) and v.strip() == ""):
-                        parsed.append(None)
-                        continue
-                    try:
-                        f = float(v)
-                        parsed.append(int(f) if dt == "int64" else f)
-                    except (ValueError, TypeError):
-                        parsed.append(None)
-                new_dict[c] = parsed
-            else:
-                new_dict[c] = vals
-        index = list(result_df._index) if result_df._index is not None else None
-        return DataFrame(new_dict, index=index)
 
     def _merge_python_fallback(
         self,
@@ -4929,6 +4886,43 @@ class DataFrame:
         from .io import to_pickle as _to_pickle
 
         _to_pickle(self, path, **kwargs)
+
+    def to_stata(self, path: str, **kwargs) -> None:
+        """将 DataFrame 写入 Stata 文件 (委托 io 层)。
+
+        :param path: 输出文件路径
+        """
+        from .io import to_stata as _to_stata
+
+        _to_stata(self, path, **kwargs)
+
+    def to_orc(self, path: str, **kwargs) -> None:
+        """将 DataFrame 写入 ORC 文件 (委托 io 层)。
+
+        :param path: 输出文件路径
+        """
+        from .io import to_orc as _to_orc
+
+        _to_orc(self, path, **kwargs)
+
+    def to_hdf(self, path: str, key: str = "data", **kwargs) -> None:
+        """将 DataFrame 写入 HDF5 文件 (委托 io 层)。
+
+        :param path: 输出文件路径
+        :param key: HDF5 存储键名
+        """
+        from .io import to_hdf as _to_hdf
+
+        _to_hdf(self, path, key=key, **kwargs)
+
+    def to_clipboard(self, excel: bool = True, **kwargs) -> None:
+        """将 DataFrame 复制到系统剪贴板 (委托 io 层)。
+
+        :param excel: 是否按 Excel 兼容制表符分隔
+        """
+        from .io import to_clipboard as _to_clipboard
+
+        _to_clipboard(self, excel=excel, **kwargs)
 
     def to_sql(
         self,
@@ -10041,6 +10035,25 @@ class DataFrame:
 
         return LazyFrame(self)
 
+    def boxplot(
+        self,
+        column=None,
+        by=None,
+        ax=None,
+        **kwargs,
+    ):
+        """箱线图 (pandas 对齐，委托 plot(kind='box'))。
+
+        :param column: 要画箱线图的列 (None = 所有列)
+        :param by: 分组列 (签名兼容)
+        :param ax: matplotlib axes
+        :return: matplotlib axes
+        """
+        if column is not None:
+            cols = [column] if isinstance(column, str) else list(column)
+            return self[cols].plot(kind="box", ax=ax, **kwargs)
+        return self.plot(kind="box", ax=ax, **kwargs)
+
     def plot(self, x=None, y=None, kind="line", **kwargs):
         """绘制 DataFrame。
 
@@ -10254,9 +10267,12 @@ class DataFrame:
             [NaN, 1.5, 2.5, 3.5]
         """
         if on is not None:
-            raise NotImplementedError(
-                "DataFrame.rolling(on=...) 暂不支持，请先 set_index"
-            )
+            if not isinstance(window, int):
+                raise NotImplementedError(
+                    "time-based rolling(on=...) 暂不支持，请使用整数 window"
+                )
+            if on not in self._columns:
+                raise ValueError(f"on column {on!r} not found")
         if window < 1:
             raise ValueError("window must be >= 1")
         return _DataFrameRolling(
@@ -10266,6 +10282,7 @@ class DataFrame:
             center=center,
             win_type=win_type,
             closed=closed,
+            on_column=on,
         )
 
     def expanding(self, min_periods: int = 1) -> "_DataFrameExpanding":
@@ -10338,15 +10355,90 @@ class DataFrame:
         :raises TypeError: index 非 datetime
         """
         if on is not None:
-            raise NotImplementedError(
-                "DataFrame.resample(on=...) 暂不支持，请先 set_index"
-            )
+            if on not in self._columns:
+                raise ValueError(f"on column {on!r} not found")
+            on_vals = list(self._get_column_as_series(on).values)
+            if not all(isinstance(v, datetime) for v in on_vals if v is not None):
+                # datetime 列经 Rust 存储后为字符串，尝试解析还原
+                from ._datetime.datetime import to_datetime as _to_datetime
+
+                try:
+                    parsed = _to_datetime(on_vals)
+                    on_vals = list(parsed.values) if hasattr(parsed, "values") else list(parsed)
+                except Exception as exc:
+                    raise TypeError("resample(on=...) requires a datetime column") from exc
+                if not all(isinstance(v, datetime) for v in on_vals if v is not None):
+                    raise TypeError("resample(on=...) requires a datetime column")
+            return _DataFrameResampler(self, rule, on_vals, on_column=on)
         index = self._index if self._index is not None else list(range(self._nrows))
         if not all(isinstance(i, datetime) for i in index):
             raise TypeError(
                 "resample requires a datetime index; use to_datetime() to convert"
             )
         return _DataFrameResampler(self, rule, index)
+
+    def asof(self, where):
+        """返回 index <= where 的最后一行 (pandas 2.1+，要求索引单调)。
+
+        :param where: 索引标签或标签列表
+        :return: DataFrame (每个 where 一行，无匹配则整行 None)
+        :raises ValueError: 索引非单调
+        """
+        idx = list(self._index) if self._index is not None else list(range(self._nrows))
+        if not all(a <= b for a, b in zip(idx, idx[1:])):
+            raise ValueError("index must be monotonic for asof")
+        single = not isinstance(where, (list, tuple))
+        ws = [where] if single else list(where)
+        col_vals = {c: list(self._get_column_as_series(c).values) for c in self._columns}
+        rows = {c: [] for c in self._columns}
+        for w in ws:
+            row_i = None
+            for i in range(len(idx) - 1, -1, -1):
+                try:
+                    if idx[i] <= w:
+                        row_i = i
+                        break
+                except TypeError:
+                    continue
+            for c in self._columns:
+                rows[c].append(None if row_i is None else col_vals[c][row_i])
+        return DataFrame(rows, index=ws)
+
+    def reshape(self, *shape, order="C", value_index=None, columns=None, index=None):
+        """二维矩阵重塑 (pandas 2.1+，C 顺序)。
+
+        值按行优先读出，写入新形状。
+
+        :param shape: 目标形状 (nrows, ncols)
+        :param order: 读取顺序 (仅支持 C)
+        :param columns: 新列名 (默认 0..ncols-1)
+        :param index: 新行索引 (默认 0..nrows-1)
+        :raises ValueError: 元素数量不匹配
+        """
+        if value_index is not None:
+            raise NotImplementedError(
+                "only 2D matrix reshape is supported (value_index=... not supported)"
+            )
+        if len(shape) != 2:
+            raise ValueError("reshape requires exactly 2 dimensions")
+        r, c = int(shape[0]), int(shape[1])
+        n = self._nrows * len(self._columns)
+        if r * c != n:
+            raise ValueError(f"cannot reshape array of size {n} into shape {(r, c)}")
+        if order != "C":
+            raise NotImplementedError("only order='C' is supported")
+        col_vals = {cn: self._get_column_as_series(cn).to_list() for cn in self._columns}
+        flat: list = []
+        for i in range(self._nrows):
+            for cn in self._columns:
+                flat.append(col_vals[cn][i])
+        names = list(columns) if columns is not None else [str(j) for j in range(c)]
+        out = {name: [] for name in names}
+        for i in range(r):
+            for j in range(c):
+                out[names[j]].append(flat[i * c + j])
+        row_index = list(index) if index is not None else list(range(r))
+        return DataFrame(out, index=row_index)
 
     # ---------- 访问器 ----------
 
@@ -10612,8 +10704,9 @@ class _DataFrameWindowBase:
 
     _op_name: Optional[str] = None  # 对应 Series 上的窗口方法名
 
-    def __init__(self, df: DataFrame, **kwargs):
+    def __init__(self, df: DataFrame, on_column=None, **kwargs):
         self._df = df
+        self._on_column = on_column
         self._kwargs = kwargs
 
     def _window_obj(self, series: Series):
@@ -10623,8 +10716,12 @@ class _DataFrameWindowBase:
         out: Dict[str, list] = {}
         for c in self._df._columns:
             s = self._df._get_column_as_series(c)
-            w = self._window_obj(s)
-            out[c] = getattr(w, op)(*args, **kwargs).to_list()
+            if c == self._on_column:
+                # on 列原样透传，不参与窗口计算
+                out[c] = s.to_list()
+            else:
+                w = self._window_obj(s)
+                out[c] = getattr(w, op)(*args, **kwargs).to_list()
         return DataFrame(out, index=list(self._df._index))
 
     # ---------- 聚合方法 ----------
@@ -10673,9 +10770,11 @@ class _DataFrameRolling(_DataFrameWindowBase):
         center: bool = False,
         win_type: Optional[str] = None,
         closed: Optional[str] = None,
+        on_column=None,
     ):
         super().__init__(
             df,
+            on_column=on_column,
             window=window,
             min_periods=min_periods,
             center=center,
@@ -10733,23 +10832,34 @@ class _DataFrameEWM(_DataFrameWindowBase):
 class _DataFrameResampler:
     """DataFrame.resample 重采样对象：逐列委托 Series.resample，结果索引取首个列。"""
 
-    def __init__(self, df: DataFrame, rule: str, index: list):
+    def __init__(self, df: DataFrame, rule: str, index: list, on_column=None):
         self._df = df
         self._rule = rule
         self._index = index
+        self._on_column = on_column
 
     def _collect(self, op: str, *args, **kwargs) -> DataFrame:
         out: Dict[str, list] = {}
         result_index: Optional[list] = None
         for c in self._df._columns:
-            s = self._df._get_column_as_series(c)
+            # on= 时 on 列仅作时间轴，不参与聚合输出
+            if c == self._on_column:
+                continue
+            if self._on_column is not None:
+                # on 路径：重建 Series，以 on 列值为时间索引
+                s = Series(
+                    self._df._get_column_as_series(c).to_list(),
+                    index=self._index,
+                )
+            else:
+                s = self._df._get_column_as_series(c)
             r = s.resample(self._rule)
             result = getattr(r, op)(*args, **kwargs)
             out[c] = result.to_list()
             if result_index is None and result._index is not None:
                 result_index = list(result._index)
         if result_index is None:
-            result_index = list(self._df._index)
+            result_index = list(self._index)
         return DataFrame(out, index=result_index)
 
     def sum(self) -> DataFrame:

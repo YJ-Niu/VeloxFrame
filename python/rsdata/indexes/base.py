@@ -584,6 +584,128 @@ class Index:
 # ============================================================================
 
 
+    def searchsorted(self, value, side: str = "left", sorter=None) -> int:
+        """查找插入位置以保持有序 (主流库对齐，要求索引单调)。
+
+        :param value: 要查找的值
+        :param side: 'left' (第一个 >= value 的位置) / 'right' (最后一个 <= value 的位置)
+        :param sorter: 未实现 (签名兼容)
+        """
+        import bisect
+
+        vals = list(self._data)
+        try:
+            if not all(a <= b for a, b in zip(vals, vals[1:])):
+                raise TypeError("not monotonic")
+        except TypeError:
+            raise TypeError("index must be monotonic to searchsorted") from None
+        if side == "left":
+            return bisect.bisect_left(vals, value)
+        if side == "right":
+            return bisect.bisect_right(vals, value)
+        raise ValueError(f"invalid side: {side!r} (expected 'left' or 'right')")
+
+    def factorize(self, sort: bool = False, use_na_sentinel: bool = True):
+        """将值编码为整数码 (主流库对齐)：返回 (codes, uniques)。
+
+        :param sort: 是否按 uniques 排序
+        :param use_na_sentinel: True 时 None 编码为 -1
+        """
+        seen = {}
+        codes = []
+        for v in self._data:
+            if v is None and use_na_sentinel:
+                codes.append(-1)
+                continue
+            if v not in seen:
+                seen[v] = len(seen)
+            codes.append(seen[v])
+        uniques = list(seen.keys())
+        if sort and uniques:
+            try:
+                order = sorted(range(len(uniques)), key=lambda k: uniques[k])
+            except TypeError:
+                order = None
+            if order is not None:
+                perm = [0] * len(uniques)
+                for new_k, old_k in enumerate(order):
+                    perm[old_k] = new_k
+                codes = [perm[c] if c >= 0 else c for c in codes]
+                uniques = [uniques[k] for k in order]
+        return codes, uniques
+
+    def drop_duplicates(self, keep: str = "first") -> "Index":
+        """去除重复值 (主流库对齐)。
+
+        :param keep: 'first' 保留首次 / 'last' 保留末次 / 'false' 仅保留唯一值
+        """
+        vals = list(self._data)
+
+        def k(v):
+            return (v is None, v)
+
+        if keep == "first":
+            seen = set()
+            out = []
+            for v in vals:
+                if k(v) not in seen:
+                    seen.add(k(v))
+                    out.append(v)
+        elif keep == "last":
+            seen = set()
+            out = []
+            for v in reversed(vals):
+                if k(v) not in seen:
+                    seen.add(k(v))
+                    out.append(v)
+            out.reverse()
+        elif keep in ("false", "all"):
+            counts = {}
+            for v in vals:
+                counts[k(v)] = counts.get(k(v), 0) + 1
+            out = [v for v in vals if counts[k(v)] == 1]
+        else:
+            raise ValueError(f"keep must be 'first', 'last' or 'false', got {keep!r}")
+        return Index(out, name=self._name)
+
+    @property
+    def is_all_unique(self) -> bool:
+        """所有元素是否唯一 (主流库对齐)。"""
+        seen = set()
+        for v in self._data:
+            k = (v is None, v)
+            if k in seen:
+                return False
+            seen.add(k)
+        return True
+
+    def memory_usage(self, deep: bool = False) -> int:
+        """估算内存占用字节数 (主流库对齐，简化版：64 位元素估算)。"""
+        n = len(self._data)
+        if not n:
+            return 0
+        if deep:
+            import sys
+
+            return 8 * n + sum(sys.getsizeof(v) for v in self._data)
+        return 8 * n
+
+    def get_indexer(self, target, method=None, limit=None) -> list:
+        """将 target 值映射到本索引中的位置 (主流库对齐，简化版：仅精确匹配)。
+
+        :param target: 目标值序列
+        :param method: 未实现 (签名兼容)
+        :param limit: 未实现 (签名兼容)
+        """
+        if method is not None or limit is not None:
+            raise NotImplementedError("method/limit not supported, only exact matching")
+        pos = {}
+        for i, v in enumerate(self._data):
+            if v not in pos:
+                pos[v] = i
+        return [pos.get(t, -1) for t in list(target)]
+
+
 class RangeIndex(Index):
     """优化的范围索引，类似 RangeIndex。
 

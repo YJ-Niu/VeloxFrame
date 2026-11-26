@@ -1235,6 +1235,57 @@ impl PySeries {
         Ok(list)
     }
 
+    fn ewm_sum<'py>(
+        &self,
+        py: Python<'py>,
+        alpha: f64,
+        min_periods: Option<usize>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        let result = py.detach(|| self.inner.ewm_sum(alpha, min_periods));
+        let list = PyList::empty(py);
+        for v in result {
+            match v {
+                Some(val) => list.append(val)?,
+                None => list.append(py.None())?,
+            }
+        }
+        Ok(list)
+    }
+
+    fn rolling_min<'py>(
+        &self,
+        py: Python<'py>,
+        window: usize,
+        min_periods: Option<usize>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        let result = py.detach(|| self.inner.rolling_min(window, min_periods));
+        let list = PyList::empty(py);
+        for v in result {
+            match v {
+                Some(val) => list.append(val)?,
+                None => list.append(py.None())?,
+            }
+        }
+        Ok(list)
+    }
+
+    fn rolling_max<'py>(
+        &self,
+        py: Python<'py>,
+        window: usize,
+        min_periods: Option<usize>,
+    ) -> PyResult<Bound<'py, PyList>> {
+        let result = py.detach(|| self.inner.rolling_max(window, min_periods));
+        let list = PyList::empty(py);
+        for v in result {
+            match v {
+                Some(val) => list.append(val)?,
+                None => list.append(py.None())?,
+            }
+        }
+        Ok(list)
+    }
+
     // ---------- 日期时间方法 ----------
 
     fn dt_year(&self, py: Python<'_>) -> Self {

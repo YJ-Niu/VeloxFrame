@@ -112,6 +112,38 @@ class EWM:
         out = [_mean_at(i) for i in range(n)]
         return Series(out, name=self._s.name, index=self._s._index)
 
+    def sum(self):
+        """指数加权求和。"""
+        # 优先调用 Rust 层（仅支持非调整版 adjust=False，使用递推公式）
+        if not self._adjust:
+            try:
+                result = self._s._inner.ewm_sum(self._alpha, 0)
+                return Series(result, name=self._s.name, index=self._s._index)
+            except Exception:
+                pass
+
+        # 回退到 Python 实现
+        values = self._s.values
+        n = len(values)
+        out = []
+        for i in range(n):
+            win = values[: i + 1]
+            non_null = [(k, v) for k, v in enumerate(win) if v is not None]
+            if not non_null:
+                out.append(None)
+                continue
+            if self._adjust:
+                # 调整版: sum(w_k * x_k)（不归一化）
+                weights = self._get_weights(i + 1)
+                out.append(sum(weights[k] * v for k, v in non_null))
+            else:
+                # 非调整版: 递推 y_t = (1-alpha)*y_{t-1} + alpha*x_t
+                y = None
+                for _, v in non_null:
+                    y = v if y is None else (1 - self._alpha) * y + self._alpha * v
+                out.append(y)
+        return Series(out, name=self._s.name, index=self._s._index)
+
     def _mean_recursive(self, non_null):
         """非调整版 EWM 均值的递推计算。"""
         result = None

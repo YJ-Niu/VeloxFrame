@@ -28,8 +28,18 @@ from ._datetime import (
     to_timedelta,
 )
 from .dataframe import DataFrame
-from .indexes import crosstab, cut, get_dummies, Index, MultiIndex, qcut, RangeIndex
+from .indexes import (
+    IntervalIndex,
+    crosstab,
+    cut,
+    get_dummies,
+    Index,
+    MultiIndex,
+    qcut,
+    RangeIndex,
+)
 from . import api
+from . import errors, testing
 from .io import (
     ExcelWriter,
     read_csv_chunked,
@@ -513,6 +523,13 @@ __all__ = [
     "to_numeric",
     "merge",
     "merge_asof",
+    "merge_ordered",
+    "merge_wide_to_long",
+    "interval_range",
+    "NamedAgg",
+    "IntervalIndex",
+    "errors",
+    "testing",
     "concat",
     "pivot",
     "pivot_table",
@@ -946,6 +963,231 @@ def lreshape(
     ]
 
     return DataFrame(result_rows)
+
+
+# ============================================================================
+# 顶层缺失函数补全（续）：merge_ordered / merge_wide_to_long / interval_range
+# ============================================================================
+
+from collections import namedtuple as _namedtuple
+
+NamedAgg = _namedtuple("NamedAgg", ["column", "aggfunc"])
+
+
+def merge_ordered(
+    left,
+    right,
+    on=None,
+    left_on=None,
+    right_on=None,
+    fill_method=None,
+    **kwargs,
+):
+    """对已排序数据进行有序外连接 (主流库对齐)。
+
+    两表按键对齐，缺失的一侧用 None 填充；fill_method='ffill' 时
+    缺失值按前值填充。
+
+    :param left: 左侧 DataFrame
+    :param right: 右侧 DataFrame
+    :param on: 两侧共用的键列名
+    :param left_on: 左侧键列名
+    :param right_on: 右侧键列名
+    :param fill_method: None / 'ffill' / 'bfill'
+    """
+    if on is not None:
+        left_on = right_on = on
+    if left_on is None or right_on is None:
+        raise ValueError("must provide 'on', or both 'left_on' and 'right_on'")
+    key_col = on if on is not None else left_on
+    lkeys = list(left[left_on].values)
+    rkeys = list(right[right_on].values)
+
+    # 两侧均有序时按键归并 (保序)
+    all_keys = None
+    try:
+        l_sorted = all(a <= b for a, b in zip(lkeys, lkeys[1:]))
+        r_sorted = all(a <= b for a, b in zip(rkeys, rkeys[1:]))
+    except TypeError:
+        l_sorted = r_sorted = False
+    if l_sorted and r_sorted:
+        merged_keys = []
+        i = j = 0
+        while i < len(lkeys) and j < len(rkeys):
+            if lkeys[i] < rkeys[j]:
+                merged_keys.append(lkeys[i])
+                i += 1
+            elif lkeys[i] > rkeys[j]:
+                merged_keys.append(rkeys[j])
+                j += 1
+            else:
+                merged_keys.append(lkeys[i])
+                i += 1
+                j += 1
+        merged_keys.extend(lkeys[i:])
+        merged_keys.extend(rkeys[j:])
+        # 去重保序：唯一键序列，重复键的行由 l_map/r_map 笛卡尔积展开
+        try:
+            seen = set()
+            all_keys = [k for k in merged_keys if not (k in seen or seen.add(k))]
+        except TypeError:
+            all_keys = []
+            for k in merged_keys:
+                if k not in all_keys:
+                    all_keys.append(k)
+    else:
+        all_keys = list(dict.fromkeys(list(lkeys) + list(rkeys)))
+
+    l_map = {}
+    for i, k in enumerate(lkeys):
+        l_map.setdefault(k, []).append(i)
+    r_map = {}
+    for i, k in enumerate(rkeys):
+        r_map.setdefault(k, []).append(i)
+
+    l_cols = [c for c in left.columns if c != left_on]
+    r_cols = [c for c in right.columns if c != right_on]
+    l_data = {c: list(left[c].values) for c in l_cols}
+    r_data = {c: list(right[c].values) for c in r_cols}
+    # 冲突列加 _y 后缀
+    r_renamed = {}
+    for c in r_cols:
+        if c in l_cols or c == key_col:
+            r_renamed[c] = c + "_y"
+        else:
+            r_renamed[c] = c
+
+    out = {key_col: []}
+    for c in l_cols:
+        out[c] = []
+    for name in r_renamed.values():
+        out[name] = []
+    for k in all_keys:
+        lis = l_map.get(k, [None])
+        ris = r_map.get(k, [None])
+        for li in lis:
+            for ri in ris:
+                out[key_col].append(k)
+                for c in l_cols:
+                    out[c].append(l_data[c][li] if li is not None else None)
+                for c in r_cols:
+                    out[r_renamed[c]].append(r_data[c][ri] if ri is not None else None)
+
+    if fill_method:
+        for c in out:
+            if c == key_col:
+                continue
+            vals = out[c]
+            if fill_method == "ffill":
+                last = None
+                for i, v in enumerate(vals):
+                    if v is None:
+                        vals[i] = last
+                    else:
+                        last = v
+            elif fill_method == "bfill":
+                nxt = None
+                for i in range(len(vals) - 1, -1, -1):
+                    if vals[i] is None:
+                        vals[i] = nxt
+                    else:
+                        nxt = vals[i]
+            else:
+                raise ValueError(f"invalid fill_method: {fill_method!r}")
+    return DataFrame(out)
+
+
+def merge_wide_to_long(
+    df, stubnames, iaxis=0, mcols=None, sep="", junct="_", suffix=None
+):
+    """宽表转长表 (主流库对齐，简化版)。
+
+    :param df: 宽表 DataFrame
+    :param stubnames: 存根列前缀列表，如 ['A', 'B'] (对应 A_1, A_2, ...)
+    :param iaxis: 后缀列名 (存根后缀对应的列)
+    :param mcols: 需要逐行重复的其他标识列
+    :param sep: 存根与后缀间的分隔符
+    :param junct: 输出列名连接符 (保留参数)
+    :param suffix: 后缀集合；None 时自动检测
+    """
+    cols = list(df.columns)
+    stubs = list(stubnames)
+    mcols = list(mcols) if mcols is not None else []
+    data = {c: list(df[c].values) for c in cols}
+    n = len(data[cols[0]]) if cols else 0
+    if suffix is None:
+        sfx = set()
+        for stub in stubs:
+            prefix = f"{stub}{sep}"
+            for c in cols:
+                if c.startswith(prefix):
+                    sfx.add(c[len(prefix):])
+        if not sfx:
+            raise ValueError(f"no columns matching stubs {stubs!r}")
+        suffix = sorted(sfx)
+        # 后缀字符串按 iaxis 列类型转换 (若该列为数值型)
+        iaxis_vals = data.get(str(iaxis))
+        if iaxis_vals and all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) for v in iaxis_vals
+        ):
+            conv = int if all(isinstance(v, int) and not isinstance(v, bool) for v in iaxis_vals) else float
+            try:
+                suffix = [conv(s) for s in suffix]
+            except (TypeError, ValueError):
+                pass
+
+    out = {m: [] for m in mcols}
+    out[iaxis] = []
+    for stub in stubs:
+        out[stub] = []
+    for i in range(n):
+        for s in suffix:
+            for m in mcols:
+                out[m].append(data[m][i])
+            out[iaxis].append(s)
+            for stub in stubs:
+                col = f"{stub}{sep}{s}"
+                if col not in data:
+                    raise ValueError(f"missing column {col!r} for stub {stub!r}")
+                out[stub].append(data[col][i])
+    return DataFrame(out)
+
+
+def interval_range(
+    start=None, end=None, periods=None, freq=None, closed: str = "right", name=None
+):
+    """生成 IntervalIndex (主流库对齐，简化版：数值区间 + 数值步长)。
+
+    start/end/periods/freq 中至少给出三个。
+
+    :param start: 起点
+    :param end: 终点
+    :param periods: 区间个数
+    :param freq: 步长 (数值)
+    :param closed: 'left'/'right'/'both'/'neither'
+    :param name: 索引名
+    """
+    if freq is None:
+        freq = 1
+    if not isinstance(freq, (int, float)) or isinstance(freq, bool):
+        raise NotImplementedError("string freq not supported, pass a numeric step")
+    if freq == 0:
+        raise ValueError("freq must not be 0")
+    given = sum(x is not None for x in (start, end, periods, freq))
+    if given < 3:
+        raise ValueError("at least 3 of start, end, periods, freq are required")
+    if start is None:
+        start = end - freq * (periods - 1)
+    elif end is None:
+        end = start + freq * periods
+    if periods is None:
+        if (end - start) % freq:
+            raise ValueError("inferred `periods` must be integer, got fractional")
+        periods = int((end - start) / freq)
+    if periods < 1:
+        raise ValueError("with `freq` given, `periods` must be >= 1")
+    breaks = [start + i * freq for i in range(periods + 1)]
+    return IntervalIndex.from_breaks(breaks, closed=closed, name=name)
 
 
 # ============================================================================

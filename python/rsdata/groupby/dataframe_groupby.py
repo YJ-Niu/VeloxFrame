@@ -1209,6 +1209,134 @@ class DataFrameGroupBy:
                     result[c].append((variance / n) ** 0.5)
         return DataFrame(result)
 
+    def pad(self, limit=None) -> "DataFrame":
+        """前向填充别名 (主流库对齐)。"""
+        return self.ffill(limit=limit)
+
+    def backfill(self, limit=None) -> "DataFrame":
+        """后向填充别名 (主流库对齐)。"""
+        return self.bfill(limit=limit)
+
+    @property
+    def as_index(self) -> bool:
+        """分组键是否放入索引 (主流库对齐)。"""
+        return self._as_index
+
+    @as_index.setter
+    def as_index(self, value: bool):
+        self._as_index = value
+
+    @property
+    def observed(self) -> bool:
+        """Categorical 分组是否仅用已观测值 (主流库对齐)。"""
+        return self._observed
+
+    @observed.setter
+    def observed(self, value: bool):
+        self._observed = value
+
+    def value_counts(
+        self, normalize: bool = False, sort: bool = True, ascending: bool = False
+    ) -> "DataFrame":
+        """逐列分组值计数：结果为 (分组键..., 值) MultiIndex 的 DataFrame (主流库 2.1+ 对齐)。
+
+        :param normalize: True 时输出相对频率
+        :param sort: 是否排序
+        :param ascending: 升序
+        """
+        from ..indexes import MultiIndex
+
+        cols = [c for c in self._df._columns if c not in self._by]
+        n = self._df._nrows
+        vals_all = {c: list(self._df[c].values) for c in cols}
+        if len(self._by) == 1:
+            by_vals = list(self._df[self._by[0]].values)
+
+            def key_fn(i):
+                return by_vals[i]
+        else:
+            by_cols = [list(self._df[c].values) for c in self._by]
+
+            def key_fn(i):
+                return tuple(col[i] for col in by_cols)
+
+        per_col = {}
+        for c in cols:
+            vc = {}
+            for i in range(n):
+                key = key_fn(i)
+                parts = key if isinstance(key, tuple) else (key,)
+                if self._dropna and any(p is None for p in parts):
+                    continue
+                v = vals_all[c][i]
+                row = parts + (v is None, v)
+                vc[row] = vc.get(row, 0) + 1
+            per_col[c] = vc
+
+        all_keys = set()
+        for vc in per_col.values():
+            all_keys.update(vc.keys())
+        if sort and all_keys:
+            all_keys = list(all_keys)
+            # 稳定排序逐层倒序排，最终首层优先级最高 (字典序)
+            for level in range(len(all_keys[0]) - 1, -1, -1):
+                try:
+                    all_keys.sort(key=lambda t, lv=level: t[lv])
+                except TypeError:
+                    # 该层类型不可比较时退化为字符串排序
+                    all_keys.sort(key=lambda t, lv=level: str(t[lv]))
+        else:
+            all_keys = list(all_keys)
+
+        if normalize:
+            scale = {c: sum(vc.values()) for c, vc in per_col.items()}
+            out = {
+                c: [
+                    (vc.get(t) or 0) / scale[c] if scale[c] else None for t in all_keys
+                ]
+                for c, vc in per_col.items()
+            }
+        else:
+            out = {c: [vc.get(t) for t in all_keys] for c, vc in per_col.items()}
+        names = list(self._by) + [None]
+        mi = MultiIndex.from_tuples(all_keys, names=names)
+        return DataFrame(out, index=mi)
+
+    def interpolate(self, method: str = "linear", limit=None, **kwargs) -> "DataFrame":
+        """分组逐列线性插值 (主流库对齐，仅支持 linear)。
+
+        :param method: 插值方法 (仅 'linear')
+        :param limit: 未实现 (签名兼容)
+        """
+        if method != "linear":
+            raise NotImplementedError(f"only method='linear' supported, got {method!r}")
+        if limit is not None:
+            raise NotImplementedError("limit not supported")
+        cols = [c for c in self._df._columns if c not in self._by]
+        out = {}
+        for c in cols:
+            vals = list(self._df[c].values)
+            result = list(vals)
+            for idxs in self._groups.values():
+                nums = [
+                    (j, i)
+                    for j, i in enumerate(idxs)
+                    if vals[i] is not None and isinstance(vals[i], (int, float))
+                ]
+                for m in range(len(nums) - 1):
+                    (j0, i0), (j1, i1) = nums[m], nums[m + 1]
+                    gap = j1 - j0
+                    if gap <= 1:
+                        continue
+                    v0, v1 = vals[i0], vals[i1]
+                    for j in range(j0 + 1, j1):
+                        i = idxs[j]
+                        if result[i] is None:
+                            frac = (j - j0) / gap
+                            result[i] = v0 + (v1 - v0) * frac
+            out[c] = result
+        return DataFrame(out, index=self._df._index)
+
 
 # ---------------------------------------------------------------------------
 # 索引器

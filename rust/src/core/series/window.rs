@@ -476,4 +476,97 @@ impl Series {
         }
         result
     }
+
+    /// 指数加权移动求和（递归形式 y_t = (1-alpha)*y_{t-1} + alpha*x_t，
+    /// 与 [Self::ewm_mean] 的递归形式一致，即 adjust=False 语义）
+    pub fn ewm_sum(&self, alpha: f64, min_periods: Option<usize>) -> Vec<Option<f64>> {
+        let n = self.len();
+        let min_per = min_periods.unwrap_or(0);
+        let values = self.as_f64_vec();
+        let mut result: Vec<Option<f64>> = vec![None; n];
+
+        let mut prev: Option<f64> = None;
+        let mut count = 0;
+        for i in 0..n {
+            if let Some(v) = values[i] {
+                count += 1;
+                prev = match prev {
+                    None => Some(v),
+                    Some(p) => Some((1.0 - alpha) * p + alpha * v),
+                };
+            }
+            if count > min_per && prev.is_some() {
+                result[i] = prev;
+            }
+        }
+        result
+    }
+
+    /// 滑动窗口最小值（O(n) 单调双端队列）
+    pub fn rolling_min(&self, window: usize, min_periods: Option<usize>) -> Vec<Option<f64>> {
+        self._rolling_extreme(window, min_periods, true)
+    }
+
+    /// 滑动窗口最大值（O(n) 单调双端队列）
+    pub fn rolling_max(&self, window: usize, min_periods: Option<usize>) -> Vec<Option<f64>> {
+        self._rolling_extreme(window, min_periods, false)
+    }
+
+    /// rolling_min / rolling_max 的公共实现
+    /// is_min: true=最小值（队列值升序，队头最小），false=最大值（降序，队头最大）
+    fn _rolling_extreme(
+        &self,
+        window: usize,
+        min_periods: Option<usize>,
+        is_min: bool,
+    ) -> Vec<Option<f64>> {
+        let n = self.len();
+        let min_per = min_periods.unwrap_or(window);
+        let values = self.as_f64_vec();
+
+        // 非空值前缀计数（用于 min_periods 判定）
+        let mut prefix_cnt: Vec<usize> = vec![0; n + 1];
+        for (i, item) in values.iter().enumerate() {
+            prefix_cnt[i + 1] = prefix_cnt[i];
+            if item.is_some() {
+                prefix_cnt[i + 1] += 1;
+            }
+        }
+
+        let mut deque: std::collections::VecDeque<(usize, f64)> = std::collections::VecDeque::new();
+        let mut result: Vec<Option<f64>> = vec![None; n];
+
+        for i in 0..n {
+            if let Some(v) = values[i] {
+                // 维护单调性：弹出队尾"劣于"当前值的元素
+                while let Some(&(_, val)) = deque.back() {
+                    let worse = if is_min { val >= v } else { val <= v };
+                    if worse {
+                        deque.pop_back();
+                    } else {
+                        break;
+                    }
+                }
+                deque.push_back((i, v));
+            }
+            // 移除滑出窗口的元素
+            let start = (i + 1).saturating_sub(window);
+            while let Some(&(idx, _)) = deque.front() {
+                if idx < start {
+                    deque.pop_front();
+                } else {
+                    break;
+                }
+            }
+            // 窗口内非空值数达到 min_periods 时，队头即极值
+            let cnt = prefix_cnt[i + 1] - prefix_cnt[start];
+            if cnt < min_per {
+                continue;
+            }
+            if let Some(&(_, val)) = deque.front() {
+                result[i] = Some(val);
+            }
+        }
+        result
+    }
 }
