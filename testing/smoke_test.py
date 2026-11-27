@@ -1,14 +1,14 @@
-"""构建冒烟测试：验证 rsdata 可正常导入与基础运算。
+"""构建冒烟测试：验证 veloxframe 可正常导入与基础运算。
 
 用于 CI 构建后验证（build-and-test job 安装 wheel 后执行），
 以及本地 `./build_wheel.sh` 构建后的快速自检。
 """
 
-import rsdata as rpd
+import veloxframe as rpd
 
 
 def main() -> None:
-    print(f"rsdata version: {rpd.__version__}")
+    print(f"veloxframe version: {rpd.__version__}")
     s = rpd.Series([1, 2, 3, 4, 5])
     print(f"Series: {list(s.values)}")
     print(f"Sum: {s.sum()}")

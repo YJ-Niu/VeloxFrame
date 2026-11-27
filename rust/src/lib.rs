@@ -5,7 +5,7 @@ use crate::core::series::PySeries;
 use pyo3::prelude::*;
 
 #[pymodule]
-fn rsdata(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn veloxframe(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySeries>()?;
     m.add_class::<PyDataFrame>()?;
     // CSV 读写

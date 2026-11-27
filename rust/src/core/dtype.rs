@@ -119,6 +119,47 @@ impl ColumnData {
         self.slice(len - n, len)
     }
 
+    /// 按索引收集（保类型）：`indices[i]` 为 None 时结果第 i 位为缺失值。
+    /// 越界索引按 None 处理。用于 merge_typed 等需要保留源列类型的收集场景。
+    pub fn gather(&self, indices: &[Option<usize>]) -> ColumnData {
+        // v: Vec<Option<T>>，v.get(k) 得 Option<&Option<T>>，
+        // copied()/cloned() 后再 flatten() 得到 Option<T>（越界或缺失均为 None）
+        match self {
+            ColumnData::Int(v) => ColumnData::Int(
+                indices
+                    .iter()
+                    .map(|&i| i.and_then(|k| v.get(k).copied().flatten()))
+                    .collect(),
+            ),
+            ColumnData::Float(v) => ColumnData::Float(
+                indices
+                    .iter()
+                    .map(|&i| i.and_then(|k| v.get(k).copied().flatten()))
+                    .collect(),
+            ),
+            ColumnData::Bool(v) => ColumnData::Bool(
+                indices
+                    .iter()
+                    .map(|&i| i.and_then(|k| v.get(k).copied().flatten()))
+                    .collect(),
+            ),
+            ColumnData::String(v) => ColumnData::String(
+                indices
+                    .iter()
+                    .map(|&i| i.and_then(|k| v.get(k).cloned().flatten()))
+                    .collect(),
+            ),
+            ColumnData::Categorical(c) => ColumnData::Categorical(CategoricalData {
+                categories: c.categories.clone(),
+                codes: indices
+                    .iter()
+                    .map(|&i| i.and_then(|k| c.codes.get(k).copied().flatten()))
+                    .collect(),
+                ordered: c.ordered,
+            }),
+        }
+    }
+
     /// 非缺失值数量
     pub fn count_non_null(&self) -> usize {
         match self {

@@ -1,25 +1,25 @@
 <p align="center">
-  <h1 align="center">rsdata</h1>
+  <h1 align="center">VeloxFrame</h1>
   <p align="center">
     <strong>DataFrame-compatible API, Rust-powered performance</strong>
   </p>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/pypi/v/rsdata?label=PyPI" alt="PyPI">
-  <img src="https://img.shields.io/pypi/pyversions/rsdata" alt="Python">
+  <img src="https://img.shields.io/pypi/v/VeloxFrame?label=PyPI" alt="PyPI">
+  <img src="https://img.shields.io/pypi/pyversions/VeloxFrame" alt="Python">
   <img src="https://img.shields.io/badge/Rust-2024%20edition-orange" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
 </p>
 
 ---
 
-**rsdata** is a high-performance DataFrame-compatible data analysis library powered by Rust. Write the same DataFrame code you know—filtering, grouping, window functions, reshaping—but get near-native performance thanks to columnar storage, vectorized operations, and multi-threaded parallelism via [Rayon](https://github.com/rayon-rs/rayon).
+**VeloxFrame** is a high-performance DataFrame-compatible data analysis library powered by Rust. Write the same DataFrame code you know—filtering, grouping, window functions, reshaping—but get near-native performance thanks to columnar storage, vectorized operations, and multi-threaded parallelism via [Rayon](https://github.com/rayon-rs/rayon).
 
 Built on [rsarray](https://pypi.org/project/rsarray/) for zero-copy ndarray operations.
 
 ```python
-import rsdata as rpd
+import veloxframe as rpd
 
 df = rpd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
 print(df.describe())
@@ -41,7 +41,7 @@ print(df.groupby("a").sum())
 Requires **Python >= 3.9**.
 
 ```bash
-pip install rsdata
+pip install VeloxFrame
 ```
 
 Or build from source:
@@ -49,7 +49,7 @@ Or build from source:
 ```bash
 pip install maturin
 maturin build --release
-pip install target/wheels/rsdata-*.whl
+pip install target/wheels/veloxframe-*.whl
 ```
 
 ## Quick Start
@@ -57,7 +57,7 @@ pip install target/wheels/rsdata-*.whl
 ### Series
 
 ```python
-import rsdata as rpd
+import veloxframe as rpd
 
 s = rpd.Series([1, 2, 3, 4, 5], name="values")
 s.head(3)           # first 3 rows
@@ -205,7 +205,7 @@ rpd.crosstab(df["a"], df["b"])
 
 ## Performance
 
-rsdata leverages multi-threaded parallelism via [Rayon](https://github.com/rayon-rs/rayon) across all heavy operations:
+VeloxFrame leverages multi-threaded parallelism via [Rayon](https://github.com/rayon-rs/rayon) across all heavy operations:
 
 | Operation         | Parallelized methods                                                     |
 | ----------------- | ------------------------------------------------------------------------ |
@@ -221,16 +221,16 @@ The Rust core uses columnar `Vec<Option<T>>` storage with `opt-level=3` and `lto
 
 ```
 User Code (Python)
-    │  import rsdata as rpd
+    │  import veloxframe as rpd
     ▼
 ┌──────────────────────────────────────┐
-│  python/rsdata/                    │  ← Python API layer
+│  python/veloxframe/                    │  ← Python API layer
 │  series.py / dataframe.py / ...      │     (DataFrame-compatible signatures)
 └────────────────┬─────────────────────┘
                  │  PyO3 FFI
                  ▼
 ┌──────────────────────────────────────┐
-│  rsdata._rust  (compiled .so/.dylib)│  ← Native module
+│  veloxframe.veloxframe (compiled .so)  │  ← Native module
 ├──────────────────────────────────────┤
 │  PySeries / PyDataFrame  (#[pyclass])│
 ├──────────────────────────────────────┤

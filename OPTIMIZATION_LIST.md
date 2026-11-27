@@ -1,6 +1,6 @@
-# rsdata 优化清单
+# veloxframe 优化清单
 
-> 本文档记录 rsdata 的完整开发与优化任务，已完成的打 ✓，待完成的打 ☐。
+> 本文档记录 veloxframe 的完整开发与优化任务，已完成的打 ✓，待完成的打 ☐。
 
 ---
 
@@ -15,7 +15,7 @@ Python 层应保持"薄"——仅作为 API 接口层，核心计算逻辑下沉
 - Python 层方法只做：参数校验 → 调用 Rust 层 → 包装返回结果
 - 禁止在 Python 层实现复杂计算逻辑（统计、排序、聚合等）
 - 所有公开方法的参数名、默认值、类型注解必须与主流库对齐
-- 对主流库不存在但 rsdata 扩展的方法，参数设计应参考主流库风格
+- 对主流库不存在但 veloxframe 扩展的方法，参数设计应参考主流库风格
 - rsarray 为必选依赖，Python 层通过 `import rsarray as rnp` 直接引用
 - `to_numpy()` / `from_numpy()` 使用 rsarray.ndarray
 
@@ -327,12 +327,12 @@ Rust 层作为底层实现，要求高性能（利用并行计算、零拷贝、
 ### 当前结构
 
 ```
-rsdata/
+veloxframe/
 ├── src/                # Rust 源码
 │   ├── lib.rs
 │   └── core/
 ├── python/             # Python 源码
-│   └── rsdata/
+│   └── veloxframe/
 ├── test/
 ├── build_wheel.sh
 ├── pyproject.toml
@@ -343,7 +343,7 @@ rsdata/
 ### 目标结构
 
 ```
-rsdata/
+veloxframe/
 ├── src/                        # Rust 源码
 │   ├── lib.rs                  # 库入口，PyO3 模块注册
 │   └── core/                   # 核心模块
@@ -354,7 +354,7 @@ rsdata/
 │       ├── csv_io.rs           # CSV 读写（read_csv_string/write_csv_string 等）
 │       └── xlsx_io.rs          # Excel 读写（read_xlsx/write_xlsx 等）
 ├── python/                     # Python 源码
-│   └── rsdata/               # Python 包
+│   └── veloxframe/               # Python 包
 │       ├── __init__.py         # 包入口，导出核心 API，全局选项配置
 │       ├── series.py           # Series 类及辅助类（Rolling/Expanding/EWM/Resampler/
 │       │                       #   StringAccessor/CatAccessor/DatetimeAccessor/SeriesGroupBy）
@@ -363,7 +363,7 @@ rsdata/
 │       ├── _datetime.py        # 日期时间函数（to_datetime/date_range/to_timedelta 等）
 │       ├── io.py               # IO 接口（read_csv/read_json/read_excel/read_parquet 等）
 │       ├── offsets.py          # 时间偏移量
-│       ├── rsdata_api.pyi    # 类型存根文件
+│       ├── veloxframe_api.pyi    # 类型存根文件
 │       └── api/                # API 子模块
 │           ├── __init__.py     # API 模块入口
 │           └── types.py        # 类型检查函数（is_numeric_dtype/is_string_dtype 等）

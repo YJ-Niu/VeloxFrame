@@ -324,7 +324,7 @@ pub enum FillValue {
 // PyO3 绑定
 // =====================================================================
 
-#[pyclass(name = "_DataFrame", module = "rsdata", from_py_object)]
+#[pyclass(name = "_DataFrame", module = "veloxframe", from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyDataFrame {
     pub inner: DataFrame,

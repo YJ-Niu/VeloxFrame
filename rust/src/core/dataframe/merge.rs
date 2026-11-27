@@ -114,6 +114,93 @@ impl DataFrame {
         }
     }
 
+    /// 基于键列的哈希连接（保类型版）
+    ///
+    /// 与 [Self::merge] 的匹配逻辑相同，但输出列直接从源 Series 按行索引
+    /// gather（保留 Int/Float/Bool/String/Categorical 原始类型），
+    /// 避免字符串中转导致的类型丢失。
+    pub fn merge_typed(
+        &self,
+        right: &DataFrame,
+        left_on: usize,
+        right_on: usize,
+        how: &str,
+    ) -> DataFrame {
+        let n_left = self.data.first().map(|s| s.len()).unwrap_or(0);
+        let n_right = right.data.first().map(|s| s.len()).unwrap_or(0);
+
+        // 构建 right 表的键到行索引的映射
+        let mut right_map: HashMap<String, Vec<usize>> = HashMap::new();
+        if let Some(right_key_col) = right.data.get(right_on) {
+            for i in 0..n_right {
+                let key = right_key_col.get_str_at(i);
+                right_map.entry(key).or_default().push(i);
+            }
+        }
+
+        // 收集匹配的行对 (左行索引, 右行索引)
+        let mut matched: Vec<(Option<usize>, Option<usize>)> = Vec::new();
+        let mut right_matched: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
+        if let Some(lkc) = self.data.get(left_on) {
+            for i in 0..n_left {
+                let key = lkc.get_str_at(i);
+                if let Some(right_indices) = right_map.get(&key) {
+                    for &j in right_indices {
+                        matched.push((Some(i), Some(j)));
+                        right_matched.insert(j);
+                    }
+                } else if how == "left" || how == "outer" {
+                    matched.push((Some(i), None));
+                }
+            }
+        }
+
+        // 右连接/外连接：补充未匹配的右表行
+        if how == "right" || how == "outer" {
+            for j in 0..n_right {
+                if !right_matched.contains(&j) {
+                    matched.push((None, Some(j)));
+                }
+            }
+        }
+
+        // 构建结果列（保类型 gather）
+        let left_idx_list: Vec<Option<usize>> = matched.iter().map(|(l, _)| *l).collect();
+        let right_idx_list: Vec<Option<usize>> = matched.iter().map(|(_, r)| *r).collect();
+
+        let mut result_columns: Vec<String> = Vec::new();
+        let mut result_data: Vec<Series> = Vec::new();
+
+        // 左表所有列
+        for (col_idx, col_name) in self.columns.iter().enumerate() {
+            result_columns.push(col_name.clone());
+            let series = &self.data[col_idx];
+            result_data.push(Series {
+                name: Some(col_name.clone()),
+                data: series.data.gather(&left_idx_list),
+            });
+        }
+
+        // 右表列（跳过键列以避免重复）
+        for (col_idx, col_name) in right.columns.iter().enumerate() {
+            if col_idx == right_on {
+                continue;
+            }
+            result_columns.push(col_name.clone());
+            let series = &right.data[col_idx];
+            result_data.push(Series {
+                name: Some(col_name.clone()),
+                data: series.data.gather(&right_idx_list),
+            });
+        }
+
+        DataFrame {
+            columns: result_columns,
+            data: result_data,
+        }
+    }
+
     /// 按 by 列分组并对每列执行聚合函数
     /// by: 分组键列索引
     /// agg: 聚合函数名 ("sum"/"mean"/"count"/"min"/"max")

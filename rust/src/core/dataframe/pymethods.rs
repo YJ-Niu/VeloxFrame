@@ -444,6 +444,20 @@ impl PyDataFrame {
         PyDataFrame { inner }
     }
 
+    /// 保类型合并：输出列直接 gather 源列数据，保留 Int/Float/Bool/
+    /// String/Categorical 原始类型（区别于字符串中转的 merge）
+    fn merge_typed(
+        &self,
+        py: Python<'_>,
+        right: &PyDataFrame,
+        left_on: usize,
+        right_on: usize,
+        how: &str,
+    ) -> Self {
+        let inner = py.detach(|| self.inner.merge_typed(&right.inner, left_on, right_on, how));
+        PyDataFrame { inner }
+    }
+
     // ---------- 分组聚合 ----------
 
     /// 按 by 列分组并对每列执行聚合

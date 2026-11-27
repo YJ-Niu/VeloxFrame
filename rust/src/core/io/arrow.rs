@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn test_feather_roundtrip_int_float() {
-        let path = temp_dir().join("rsdata_test_feather_int_float.arrow");
+        let path = temp_dir().join("veloxframe_test_feather_int_float.arrow");
         let columns = vec!["a".to_string(), "b".to_string()];
         let series = vec![
             Series::new_int(Some("a".to_string()), vec![Some(1), None, Some(3)]),
@@ -272,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_feather_roundtrip_string_bool() {
-        let path = temp_dir().join("rsdata_test_feather_string_bool.arrow");
+        let path = temp_dir().join("veloxframe_test_feather_string_bool.arrow");
         let columns = vec!["s".to_string(), "f".to_string()];
         let series = vec![
             Series::new_string(

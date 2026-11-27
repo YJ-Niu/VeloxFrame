@@ -1,0 +1,788 @@
+import time
+start_time = time.time()
+from functools import partial  # noqa: E402
+import datetime  # noqa: E402
+import rsarray as np  # noqa: E402
+from collections import namedtuple  # noqa: E402
+from dataclasses import make_dataclass  # noqa: E402
+import veloxframe as pd  # noqa: E402
+from io import StringIO  # noqa: E402
+
+
+def print_series(num, s):
+    print("++++++++++++++++++++", num)
+    print(s)
+    print()
+
+
+s = pd.Series(np.random.randn(5), index=["a", "b", "c", "d", "e"])
+print_series(1, s)
+print_series(2, s.index)
+print_series(3, pd.Series(np.random.randn(5)))
+d = {"b": 1, "a": 0, "c": 2}
+print_series(4, pd.Series(d))
+d = {"a": 0.0, "b": 1.0, "c": 2.0}
+print_series(5, pd.Series(d))
+print_series(6, pd.Series(d, index=["b", "c", "d", "a"]))
+print_series(7, pd.Series(5.0, index=["a", "b", "c", "d", "e"]))
+print_series(8, s.iloc[0])
+print_series(9, s.iloc[:3])
+print_series(10, s[s > s.median()])
+print_series(11, s.iloc[[4, 3, 1]])
+print_series(12, np.exp(s))
+print_series(13, s.dtype)
+print_series(14, s.array)
+print_series(15, s.to_numpy())
+print_series(16, s["a"])
+s["e"] = 12.0
+print_series(17, s)
+print_series(18, "e" in s)
+print_series(19, "f" in s)
+print_series(20, s.get("f"))
+print_series(21, s.get("f", np.nan))
+print_series(22, s + s)
+print_series(23, np.exp(s))
+print_series(24, s.iloc[1:] + s.iloc[:-1])
+s = pd.Series(np.random.randn(5), name="something")
+print_series(25, s)
+print_series(26, s.name)
+s2 = s.rename("different")
+print_series(27, s2.name)
+d = {
+    "one": pd.Series([1.0, 2.0, 3.0], index=["a", "b", "c"]),
+    "two": pd.Series([1.0, 2.0, 3.0, 4.0], index=["a", "b", "c", "d"]),
+}
+df = pd.DataFrame(d)
+print_series(28, df)
+print_series(29, pd.DataFrame(d, index=["d", "b", "a"]))
+print_series(30, pd.DataFrame(d, index=["d", "b", "a"], columns=["two", "three"]))
+print_series(31, df.index)
+print_series(32, df.columns)
+d = {"one": [1.0, 2.0, 3.0, 4.0], "two": [4.0, 3.0, 2.0, 1.0]}
+print_series(33, pd.DataFrame(d))
+print_series(34, pd.DataFrame(d, index=["a", "b", "c", "d"]))
+data = np.zeros((2,), dtype=[("A", "i4"), ("B", "f4"), ("C", "S10")])
+data[:] = [(1, 2.0, "Hello"), (2, 3.0, "World")]
+print_series(35, pd.DataFrame(data))
+print_series(36, pd.DataFrame(data, index=["first", "second"]))
+print_series(37, pd.DataFrame(data, columns=["C", "A", "B"]))
+data2 = [{"a": 1, "b": 2}, {"a": 5, "b": 10, "c": 20}]
+print_series(38, pd.DataFrame(data2))
+print_series(39, pd.DataFrame(data2, index=["first", "second"]))
+print_series(40, pd.DataFrame(data2, columns=["a", "b"]))
+print_series(41, pd.DataFrame(
+    {
+        ("a", "b"): {("A", "B"): 1, ("A", "C"): 2},
+        ("a", "a"): {("A", "C"): 3, ("A", "B"): 4},
+        ("a", "c"): {("A", "B"): 5, ("A", "C"): 6},
+        ("b", "a"): {("A", "C"): 7, ("A", "B"): 8},
+        ("b", "b"): {("A", "D"): 9, ("A", "B"): 10},
+    }
+))
+ser = pd.Series(range(3), index=list("abc"), name="ser")
+print_series(42, pd.DataFrame(ser))
+Point = namedtuple("Point", "x y")
+print_series(43, pd.DataFrame([Point(0, 0), Point(0, 3), (2, 3)]))
+Point3D = namedtuple("Point3D", "x y z")
+print_series(44, pd.DataFrame([Point3D(0, 0, 0), Point3D(0, 3, 5), Point(2, 3)]))
+Point = make_dataclass("Point", [("x", int), ("y", int)])
+print_series(45, pd.DataFrame([Point(0, 0), Point(0, 3), Point(2, 3)]))
+print_series(46, pd.DataFrame.from_dict(dict([("A", [1, 2, 3]), ("B", [4, 5, 6])])))
+print_series(47, pd.DataFrame.from_dict(
+    dict([("A", [1, 2, 3]), ("B", [4, 5, 6])]),
+    orient="index",
+    columns=["one", "two", "three"],
+))
+print_series(48, data)
+print_series(49, pd.DataFrame.from_records(data, index="C"))
+print_series(50, df["one"])
+df["three"] = df["one"] * df["two"]
+print_series(51, df)
+del df["two"]
+three = df.pop("three")
+print_series(52, df)
+df["foo"] = "bar"
+print_series(53, df)
+df["one_trunc"] = df["one"][:2]
+print_series(54, df)
+df.insert(1, "bar", df["one"])
+print_series(55, df)
+iris = pd.read_csv("./testing/data/iris.data")
+print_series(56, iris.head())
+print_series(57, iris.assign(sepal_ratio=iris["SepalWidth"] / iris["SepalLength"]).head())
+print_series(58, iris.assign(sepal_ratio=lambda x: (x["SepalWidth"] / x["SepalLength"])).head())
+print_series(59, iris.assign(sepal_ratio=pd.col("SepalWidth") / pd.col("SepalLength")).head())
+(
+    iris.query("SepalLength > 5")
+    .assign(
+        SepalRatio=lambda x: x.SepalWidth / x.SepalLength,
+        PetalRatio=lambda x: x.PetalWidth / x.PetalLength,
+    )
+    .plot(kind="scatter", x="SepalRatio", y="PetalRatio")
+)
+dfa = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
+print_series(60, dfa.assign(C=lambda x: x["A"] + x["B"], D=lambda x: x["A"] + x["C"]))
+print_series(61, df.loc["b"])
+print_series(62, df.iloc[2])
+df = pd.DataFrame(np.random.randn(10, 4), columns=["A", "B", "C", "D"])
+df2 = pd.DataFrame(np.random.randn(7, 3), columns=["A", "B", "C"])
+print_series(63, df + df2)
+print_series(64, df - df.iloc[0])
+print_series(65, df * 5 + 2)
+print_series(66, 1 / df)
+print_series(67, df ** 4)
+df1 = pd.DataFrame({"a": [1, 0, 1], "b": [0, 1, 1]}, dtype=bool)
+df2 = pd.DataFrame({"a": [0, 1, 1], "b": [1, 1, 0]}, dtype=bool)
+print_series(68, df1 & df2)
+print_series(69, df1 | df2)
+print_series(70, df1 ^ df2)
+print_series(71, -df1)
+print_series(72, df[:5].T)
+print_series(73, np.exp(df))
+print_series(74, np.asarray(df))
+ser = pd.Series([1, 2, 3, 4])
+print_series(75, np.exp(ser))
+ser1 = pd.Series([1, 2, 3], index=["a", "b", "c"])
+ser2 = pd.Series([1, 3, 5], index=["b", "a", "c"])
+print_series(76, ser1)
+print_series(77, ser2)
+print_series(78, np.remainder(ser1, ser2))
+ser3 = pd.Series([2, 4, 6], index=["b", "c", "d"])
+print_series(79, ser3)
+print_series(80, np.remainder(ser1, ser3))
+ser = pd.Series([1, 2, 3])
+print_series(81, ser)
+idx = pd.Index([4, 5, 6])
+print_series(82, np.maximum(ser, idx))
+baseball = pd.read_csv("./testing/data/baseball.csv")
+print_series(83, baseball)
+print_series(84, baseball.info())
+print_series(85, baseball.iloc[-20:, :12].to_string())
+print_series(86, pd.DataFrame(np.random.randn(3, 12)))
+pd.set_option("display.width", 40)
+print_series(87, pd.DataFrame(np.random.randn(3, 12)))
+datafile = {
+    "filename": ["filename_01", "filename_02"],
+    "path": [
+        "./testing/veloxframe/filename_01",
+        "./testing/veloxframe/filename_02",
+    ],
+}
+pd.set_option("display.max_colwidth", 30)
+print_series(88, pd.DataFrame(datafile))
+pd.set_option("display.max_colwidth", 100)
+print_series(89, pd.DataFrame(datafile))
+df = pd.DataFrame({"foo1": np.random.randn(5), "foo2": np.random.randn(5)})
+print_series(90, df)
+print_series(91, df.foo1)
+index = pd.date_range("1/1/2000", periods=8)
+s = pd.Series(np.random.randn(5), index=["a", "b", "c", "d", "e"])
+df = pd.DataFrame(np.random.randn(8, 3), index=index, columns=["A", "B", "C"])
+long_series = pd.Series(np.random.randn(1000))
+print_series(92, long_series.head())
+print_series(93, long_series.tail(3))
+print_series(94, df[:2])
+df.columns = [x.lower() for x in df.columns]
+print_series(95, df)
+print_series(96, s.array)
+print_series(97, s.index.array)
+print_series(98, s.to_numpy())
+print_series(99, np.asarray(s))
+ser = pd.Series(pd.date_range("2000", periods=2, tz="CET"))
+print_series(100, ser.to_numpy(dtype=object))
+print_series(101, ser.to_numpy(dtype="datetime64[ns]"))
+print_series(102, df.to_numpy())
+pd.set_option("compute.use_bottleneck", False)
+pd.set_option("compute.use_numexpr", False)
+df = pd.DataFrame(
+    {
+        "one": pd.Series(np.random.randn(3), index=["a", "b", "c"]),
+        "two": pd.Series(np.random.randn(4), index=["a", "b", "c", "d"]),
+        "three": pd.Series(np.random.randn(3), index=["b", "c", "d"]),
+    }
+)
+
+print_series(103, df)
+row = df.iloc[1]
+column = df["two"]
+print_series(104, df.sub(row, axis="columns"))
+print_series(105, df.sub(row, axis=1))
+print_series(106, df.sub(column, axis="index"))
+print_series(107, df.sub(column, axis=0))
+dfmi = df.copy()
+dfmi.index = pd.MultiIndex.from_tuples(
+    [(1, "a"), (1, "b"), (1, "c"), (2, "a")], names=["first", "second"]
+)
+print_series(108, dfmi.sub(column, axis=0, level="second"))
+s = pd.Series(np.arange(10))
+print_series(109, s)
+div, rem = divmod(s, 3)
+print_series(110, div)
+print_series(111, rem)
+idx = pd.Index(np.arange(10))
+print_series(112, idx)
+div, rem = divmod(idx, 3)
+print_series(113, div)
+print_series(114, rem)
+div, rem = divmod(s, [2, 2, 3, 3, 4, 4, 5, 5, 6, 6])
+print_series(115, div)
+print_series(116, rem)
+df2 = df.copy()
+df2.loc["a", "three"] = 1.0
+print_series(117, df)
+print_series(118, df2)
+print_series(119, df + df2)
+print_series(120, df.add(df2, fill_value=0))
+print_series(121, df.gt(df2))
+print_series(122, df.ne(df2))
+print_series(123, (df > 0).all())
+print_series(124, (df > 0).any())
+print_series(125, (df > 0).any().any())
+print_series(126, df.empty)
+print_series(127, pd.DataFrame(columns=list("ABC")).empty)
+print_series(128, df + df == df * 2)
+print_series(129, (df + df == df * 2).all())
+print_series(130, np.nan == np.nan)
+print_series(131, (df + df).equals(df * 2))
+df1 = pd.DataFrame({"col": ["foo", 0, np.nan]})
+df2 = pd.DataFrame({"col": [np.nan, 0, "foo"]}, index=[2, 1, 0])
+print_series(132, df1.equals(df2))
+print_series(133, df1.equals(df2.sort_index()))
+print_series(134, pd.Series(["foo", "bar", "baz"]) == "foo")
+print_series(135, pd.Series(["foo", "bar", "baz"]) == pd.Index(["foo", "bar", "qux"]))
+print_series(136, pd.Series(["foo", "bar", "baz"]) == np.array(["foo", "bar", "qux"]))
+df1 = pd.DataFrame(
+    {"A": [1.0, np.nan, 3.0, 5.0, np.nan], "B": [np.nan, 2.0, 3.0, np.nan, 6.0]}
+)
+
+
+df2 = pd.DataFrame(
+    {
+        "A": [5.0, 2.0, 4.0, np.nan, 3.0, 7.0],
+        "B": [np.nan, np.nan, 3.0, 4.0, 6.0, 8.0],
+    }
+)
+print_series(137, df1)
+print_series(138, df2)
+print_series(139, df1.combine_first(df2))
+
+
+def combiner(x, y):
+    return np.where(pd.isna(x), y, x)
+
+
+print_series(140, df1.combine(df2, combiner))
+print_series(141, df)
+print_series(142, df.mean(axis=0))
+print_series(143, df.mean(axis=1))
+print_series(144, df.sum(axis=0, skipna=False))
+print_series(145, df.sum(axis=1, skipna=True))
+ts_stand = (df - df.mean()) / df.std()
+print_series(146, ts_stand.std())
+xs_stand = df.sub(df.mean(axis=1), axis=0).div(df.std(axis=1), axis=0)
+print_series(147, xs_stand.std(axis=1))
+print_series(148, df.cumsum())
+print_series(149, np.mean(df["one"]))
+print_series(150, np.mean(df["one"].to_numpy()))
+series = pd.Series(np.random.randn(500))
+series[20:500] = np.nan
+series[10:20] = 5
+print_series(151, series.nunique())
+series = pd.Series(np.random.randn(1000))
+series[::2] = np.nan
+print_series(152, series.describe())
+frame = pd.DataFrame(np.random.randn(1000, 5), columns=["a", "b", "c", "d", "e"])
+frame.iloc[::2] = np.nan
+print_series(153, frame.describe())
+print_series(154, series.describe(percentiles=[0.05, 0.25, 0.75, 0.95]))
+s = pd.Series(["a", "a", "b", "b", "a", "a", np.nan, "c", "d", "a"])
+print_series(155, s.describe())
+frame = pd.DataFrame({"a": ["Yes", "Yes", "No", "No"], "b": range(4)})
+print_series(156, frame.describe())
+print_series(157, frame.describe(include=["str"]))
+print_series(158, frame.describe(include=["number"]))
+print_series(159, frame.describe(include="all"))
+s1 = pd.Series(np.random.randn(5))
+print_series(160, s1)
+print_series(161, (s1.idxmin(), s1.idxmax()))
+df1 = pd.DataFrame(np.random.randn(5, 3), columns=["A", "B", "C"])
+print_series(162, df1)
+print_series(163, df1.idxmin(axis=0))
+print_series(164, df1.idxmax(axis=1))
+df3 = pd.DataFrame([2, 1, 1, 3, np.nan], columns=["A"], index=list("edcba"))
+print_series(165, df3)
+print_series(166, df3["A"].idxmin())
+data = np.random.randint(0, 7, size=50)
+print_series(167, data)
+s = pd.Series(data)
+print_series(168, s.value_counts())
+data = {"a": [1, 2, 3, 4], "b": ["x", "x", "y", "y"]}
+frame = pd.DataFrame(data)
+print_series(169, frame.value_counts())
+s5 = pd.Series([1, 1, 3, 3, 3, 5, 5, 7, 7, 7])
+print_series(170, s5.mode())
+df5 = pd.DataFrame(
+    {
+        "A": np.random.randint(0, 7, size=50),
+        "B": np.random.randint(-10, 15, size=50),
+    }
+)
+print_series(171, df5)
+print_series(172, df5.mode())
+arr = np.random.randn(20)
+factor = pd.cut(arr, 4)
+print_series(173, factor)
+arr = np.random.randn(30)
+factor = pd.qcut(arr, [0, 0.25, 0.5, 0.75, 1])
+print_series(174, factor)
+
+
+def extract_city_name(df):
+    """
+    Chicago, IL -> Chicago for city_name column
+    """
+    df["city_name"] = df["city_and_code"].str.split(",").str.get(0)
+    return df
+
+
+def add_country_name(df, country_name=None):
+    """
+    Chicago -> Chicago-US for city_name column
+    """
+    col = "city_name"
+    df["city_and_country"] = df[col] + country_name
+    return df
+
+
+df_p = pd.DataFrame({"city_and_code": ["Chicago, IL"]})
+print_series(175, add_country_name(extract_city_name(df_p), country_name="US"))
+print_series(176, df_p.pipe(extract_city_name).pipe(add_country_name, country_name="US"))
+print_series(177, df.apply(lambda x: np.mean(x)))
+print_series(178, df.apply(lambda x: np.mean(x), axis=1))
+print_series(179, df.apply(lambda x: x.max() - x.min()))
+print_series(180, df.apply(np.cumsum))
+print_series(181, df.apply(np.exp))
+print_series(182, df.apply("mean"))
+print_series(183, df.apply("mean", axis=1))
+tsdf = pd.DataFrame(
+    np.random.randn(1000, 3),
+    columns=["A", "B", "C"],
+    index=pd.date_range("1/1/2000", periods=1000),
+)
+print_series(184, tsdf.apply(lambda x: x.idxmax()))
+
+
+def subtract_and_divide(x, sub, divide=1):
+    return (x - sub) / divide
+
+
+df_udf = pd.DataFrame(np.ones((2, 2)))
+print_series(185, df_udf.apply(subtract_and_divide, args=(5,), divide=3))
+tsdf = pd.DataFrame(
+    np.random.randn(10, 3),
+    columns=["A", "B", "C"],
+    index=pd.date_range("1/1/2000", periods=10),
+)
+tsdf.iloc[3:7] = np.nan
+print_series(186, tsdf)
+print_series(187, tsdf.apply(pd.Series.interpolate))
+tsdf = pd.DataFrame(
+    np.random.randn(10, 3),
+    columns=["A", "B", "C"],
+    index=pd.date_range("1/1/2000", periods=10),
+)
+tsdf.iloc[3:7] = np.nan
+print_series(188, tsdf)
+print_series(189, tsdf.agg(lambda x: np.sum(x)))
+print_series(190, tsdf.agg("sum"))
+print_series(191, tsdf.sum())
+print_series(192, tsdf["A"].agg("sum"))
+print_series(193, tsdf.agg(["sum"]))
+print_series(194, tsdf.agg(["sum", "mean"]))
+print_series(195, tsdf["A"].agg(["sum", "mean"]))
+print_series(196, tsdf["A"].agg(["sum", lambda x: x.mean()]))
+
+
+def mymean(x):
+    return x.mean()
+
+
+print_series(197, tsdf["A"].agg(["sum", mymean]))
+print_series(198, tsdf.agg({"A": "mean", "B": "sum"}))
+print_series(199, tsdf.agg({"A": ["mean", "min"], "B": "sum"}))
+q_25 = partial(pd.Series.quantile, q=0.25)
+q_25.__name__ = "25%"
+q_75 = partial(pd.Series.quantile, q=0.75)
+q_75.__name__ = "75%"
+print_series(200, tsdf.agg(["count", "mean", "std", "min", q_25, "median", q_75, "max"]))
+tsdf = pd.DataFrame(
+    np.random.randn(10, 3),
+    columns=["A", "B", "C"],
+    index=pd.date_range("1/1/2000", periods=10),
+)
+tsdf.iloc[3:7] = np.nan
+print_series(201, tsdf)
+print_series(202, tsdf.transform(np.abs))
+print_series(203, tsdf.transform("abs"))
+print_series(204, tsdf.transform(lambda x: x.abs()))
+print_series(205, np.abs(tsdf))
+print_series(206, tsdf["A"].transform(np.abs))
+print_series(207, tsdf.transform([np.abs, lambda x: x + 1]))
+print_series(208, tsdf["A"].transform([np.abs, lambda x: x + 1]))
+print_series(209, tsdf.transform({"A": np.abs, "B": lambda x: x + 1}))
+print_series(210, tsdf.transform({"A": np.abs, "B": [lambda x: x + 1, "sqrt"]}))
+df4 = df.copy()
+print_series(211, df4)
+
+
+def f(x):
+    return len(str(x))
+
+
+print_series(212, df4["one"].map(f))
+print_series(213, df4.map(f))
+s = pd.Series(
+    ["six", "seven", "six", "seven", "six"], index=["a", "b", "c", "d", "e"]
+)
+t = pd.Series({"six": 6.0, "seven": 7.0})
+print_series(215, s)
+print_series(214, s.map(t))
+s = pd.Series(np.random.randn(5), index=["a", "b", "c", "d", "e"])
+print_series(216, s)
+print_series(217, s.reindex(["e", "b", "f", "d"]))
+print_series(218, df)
+print_series(219, df.reindex(index=["c", "f", "b"], columns=["three", "two", "one"]))
+rs = s.reindex(df.index)
+print_series(220, rs)
+print_series(221, rs.index is df.index)
+print_series(222, df.reindex(["c", "f", "b"], axis="index"))
+print_series(223, df.reindex(["three", "two", "one"], axis="columns"))
+df2 = df.reindex(["a", "b", "c"], columns=["one", "two"])
+df3 = df2 - df2.mean()
+print_series(224, df2)
+print_series(225, df3)
+print_series(226, df.reindex_like(df2))
+s = pd.Series(np.random.randn(5), index=["a", "b", "c", "d", "e"])
+s1 = s[:4]
+s2 = s[1:]
+print_series(227, s1.align(s2))
+print_series(228, s1.align(s2, join="inner"))
+print_series(229, s1.align(s2, join="left"))
+print_series(230, df.align(df2, join="inner"))
+print_series(231, df.align(df2, join="inner", axis=0))
+print_series(232, df.align(df2.iloc[0], axis=1))
+rng = pd.date_range("1/3/2000", periods=8)
+ts = pd.Series(np.random.randn(8), index=rng)
+ts2 = ts.iloc[[0, 3, 6]]
+print_series(233, ts)
+print_series(234, ts2)
+print_series(235, ts2.reindex(ts.index))
+print_series(236, ts2.reindex(ts.index, method="ffill"))
+print_series(237, ts2.reindex(ts.index, method="bfill"))
+print_series(238, ts2.reindex(ts.index, method="nearest"))
+print_series(239, ts2.reindex(ts.index).ffill())
+print_series(240, ts2.reindex(ts.index, method="ffill", limit=1))
+print_series(241, ts2.reindex(ts.index, method="ffill", tolerance="1 day"))
+print_series(242, df)
+print_series(243, df.drop(["a", "d"], axis=0))
+print_series(244, df.drop(["one"], axis=1))
+print_series(245, df.reindex(df.index.difference(["a", "d"])))
+print_series(246, s)
+print_series(247, s.rename(str.upper))
+print_series(248, df.rename(
+    columns={"one": "foo", "two": "bar"},
+    index={"a": "apple", "b": "banana", "d": "durian"},
+))
+print_series(249, df.rename({"one": "foo", "two": "bar"}, axis="columns"))
+print_series(250, df.rename({"a": "apple", "b": "banana", "d": "durian"}, axis="index"))
+print_series(251, s.rename("scalar-name"))
+df = pd.DataFrame(
+    {"x": [1, 2, 3, 4, 5, 6], "y": [10, 20, 30, 40, 50, 60]},
+    index=pd.MultiIndex.from_product(
+        [["a", "b", "c"], [1, 2]], names=["let", "num"]
+    ),
+)
+print_series(252, df)
+print_series(253, df.rename_axis(index={"let": "abc"}))
+print_series(254, df.rename_axis(index=str.upper))
+df = pd.DataFrame(
+    {"col1": np.random.randn(3), "col2": np.random.randn(3)}, index=["a", "b", "c"]
+)
+for col in df:
+    print(col)
+df = pd.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
+for index, row in df.iterrows():
+    row["a"] = 10
+print_series(255, df)
+for label, ser in df.items():
+    print(label)
+    print(ser)
+for row_index, row in df.iterrows():
+    print(row_index, row, sep="\n")
+df_orig = pd.DataFrame([[1, 1.5]], columns=["int", "float"])
+print_series(256, df_orig.dtypes)
+row = next(df_orig.iterrows())[1]
+print_series(257, row)
+print_series(258, row["int"].dtype)
+print_series(259, df_orig["int"].dtype)
+df2 = pd.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
+print_series(260, df2)
+print_series(261, df2.T)
+df2_t = pd.DataFrame({idx: values for idx, values in df2.iterrows()})
+print_series(262, df2_t)
+for row in df.itertuples():
+    print(row)
+s = pd.Series(pd.date_range("20130101 09:10:12", periods=4))
+print_series(263, s)
+print_series(264, s.dt.hour)
+print_series(265, s.dt.second)
+print_series(266, s.dt.day)
+print_series(267, s[s.dt.day == 2])
+stz = s.dt.tz_localize("US/Eastern")
+print_series(268, stz)
+print_series(269, stz.dt.tz)
+print_series(270, s.dt.tz_localize("UTC").dt.tz_convert("US/Eastern"))
+s = pd.Series(pd.date_range("20130101", periods=4))
+print_series(271, s)
+print_series(272, s.dt.strftime("%Y/%m/%d"))
+s = pd.Series(pd.period_range("20130101", periods=4))
+print_series(273, s)
+print_series(274, s.dt.strftime("%Y-%m-%d"))
+s = pd.Series(pd.period_range("20130101", periods=4, freq="D"))
+print_series(275, s)
+print_series(276, s.dt.year)
+print_series(277, s.dt.day)
+s = pd.Series(pd.timedelta_range("1 day 00:00:05", periods=4, freq="s"))
+print_series(278, s)
+print_series(279, s.dt.days)
+print_series(280, s.dt.seconds)
+print_series(281, s.dt.components)
+s = pd.Series(
+    ["A", "B", "C", "Aaba", "Baca", np.nan, "CABA", "dog", "cat"], dtype="string"
+)
+print_series(282, s.str.lower())
+df = pd.DataFrame(
+    {
+        "one": pd.Series(np.random.randn(3), index=["a", "b", "c"]),
+        "two": pd.Series(np.random.randn(4), index=["a", "b", "c", "d"]),
+        "three": pd.Series(np.random.randn(3), index=["b", "c", "d"]),
+    }
+)
+unsorted_df = df.reindex(
+    index=["a", "d", "c", "b"], columns=["three", "two", "one"]
+)
+print_series(283, unsorted_df)
+print_series(284, unsorted_df.sort_index())
+print_series(285, unsorted_df.sort_index(ascending=False))
+print_series(286, unsorted_df.sort_index(axis=1))
+print_series(287, unsorted_df["three"].sort_index())
+s1 = pd.DataFrame({"a": ["B", "a", "C"], "b": [1, 2, 3], "c": [2, 3, 4]}).set_index(
+    list("ab")
+)
+print_series(288, s1)
+print_series(289, s1.sort_index(level="a"))
+print_series(290, s1.sort_index(level="a", key=lambda idx: idx.str.lower()))
+df1 = pd.DataFrame(
+    {"one": [2, 1, 1, 1], "two": [1, 3, 2, 4], "three": [5, 4, 3, 2]}
+)
+print_series(291, df1.sort_values(by="two"))
+print_series(292, df1[["one", "two", "three"]].sort_values(by=["one", "two"]))
+s[2] = np.nan
+print_series(293, s.sort_values())
+print_series(294, s.sort_values(na_position="first"))
+s1 = pd.Series(["B", "a", "C"])
+print_series(295, s1.sort_values())
+print_series(296, s1.sort_values(key=lambda x: x.str.lower()))
+df = pd.DataFrame({"a": ["B", "a", "C"], "b": [1, 2, 3]})
+print_series(297, df.sort_values(by="a"))
+print_series(298, df.sort_values(by="a", key=lambda col: col.str.lower()))
+idx = pd.MultiIndex.from_tuples(
+    [("a", 1), ("a", 2), ("a", 2), ("b", 2), ("b", 1), ("b", 1)]
+)
+idx.names = ["first", "second"]
+df_multi = pd.DataFrame({"A": np.arange(6, 0, -1)}, index=idx)
+print_series(299, df_multi)
+print_series(300, df_multi.sort_values(by=["second", "A"]))
+ser = pd.Series([1, 2, 3])
+print_series(301, ser.searchsorted([0, 3]))
+print_series(302, ser.searchsorted([0, 4]))
+print_series(303, ser.searchsorted([1, 3], side="right"))
+print_series(304, ser.searchsorted([1, 3], side="left"))
+ser = pd.Series([3, 1, 2])
+print_series(305, ser.searchsorted([0, 3], sorter=np.argsort(ser)))
+s = pd.Series(np.random.permutation(10))
+print_series(306, s)
+print_series(307, s.sort_values())
+print_series(308, s.nsmallest(3))
+print_series(309, s.nlargest(3))
+df = pd.DataFrame(
+    {
+        "a": [-2, -1, 1, 10, 8, 11, -1],
+        "b": list("abdceff"),
+        "c": [1.0, 2.0, 4.0, 3.2, np.nan, 3.0, 4.0],
+    }
+)
+print_series(310, df.nlargest(3, "a"))
+print_series(311, df.nlargest(5, ["a", "c"]))
+print_series(312, df.nsmallest(3, "a"))
+print_series(313, df.nsmallest(5, ["a", "c"]))
+df1.columns = pd.MultiIndex.from_tuples(
+    [("a", "one"), ("a", "two"), ("b", "three")]
+)
+print_series(314, df1.sort_values(by=("a", "two")))
+dft = pd.DataFrame(
+    {
+        "A": np.random.rand(3),
+        "B": 1,
+        "C": "foo",
+        "D": pd.Timestamp("20010102"),
+        "E": pd.Series([1.0] * 3).astype("float32"),
+        "F": False,
+        "G": pd.Series([1] * 3, dtype="int8"),
+    }
+)
+print_series(315, dft)
+print_series(316, dft.dtypes)
+print_series(317, dft["A"].dtype)
+print_series(318, pd.Series([1, 2, 3, 4, 5, 6.0]))
+print_series(319, pd.Series([1, 2, 3, 6.0, "foo"]))
+print_series(320, dft.dtypes.value_counts())
+df1 = pd.DataFrame(np.random.randn(8, 1), columns=["A"], dtype="float64")
+print_series(321, df1)
+print_series(322, df1.dtypes)
+df2 = pd.DataFrame(
+    {
+        "A": pd.Series(np.random.randn(8), dtype="float32"),
+        "B": pd.Series(np.random.randn(8)),
+        "C": pd.Series(np.random.randint(0, 255, size=8), dtype="uint8"),  # [0,255] (range of uint8)
+    }
+)
+print_series(323, df2)
+print_series(324, df2.dtypes)
+print_series(325, pd.DataFrame([1, 2], columns=["a"]).dtypes)
+print_series(326, pd.DataFrame({"a": [1, 2]}).dtypes)
+print_series(327, pd.DataFrame({"a": 1}, index=list(range(2))).dtypes)
+frame = pd.DataFrame(np.array([1, 2]))
+print_series(328, frame)
+df3 = df1.reindex_like(df2).fillna(value=0.0) + df2
+print_series(329, df3)
+print_series(330, df3.dtypes)
+print_series(331, df3.to_numpy().dtype)
+print_series(332, df3.astype("float32").dtypes)
+df = pd.DataFrame(
+    [
+        [1, 2],
+        ["a", "b"],
+        [datetime.datetime(2016, 3, 2), datetime.datetime(2016, 3, 2)],
+    ]
+)
+df = df.T
+print_series(333, df)
+print_series(334, df.dtypes)
+print_series(335, df.infer_objects().dtypes)
+print_series(335, df.infer_objects())
+m = ["1.1", 2, 3]
+print_series(336, pd.to_numeric(m))
+m = ["2016-07-09", datetime.datetime(2016, 3, 2)]
+print_series(337, pd.to_datetime(m))
+m = ["5us", pd.Timedelta("1day")]
+print_series(338, pd.to_timedelta(m))
+m = ["apple", datetime.datetime(2016, 3, 2)]
+print_series(339, pd.to_datetime(m, errors="coerce"))
+m = ["apple", 2, 3]
+print_series(340, pd.to_numeric(m, errors="coerce"))
+m = ["apple", pd.Timedelta("1day")]
+print_series(341, pd.to_timedelta(m, errors="coerce"))
+m = ["1", 2, 3]
+print_series(342, pd.to_numeric(m, downcast="integer"))
+print_series(343, pd.to_numeric(m, downcast="signed"))
+print_series(344, pd.to_numeric(m, downcast="unsigned"))
+print_series(345, pd.to_numeric(m, downcast="float"))
+df = pd.DataFrame([["2016-07-09", datetime.datetime(2016, 3, 2)]] * 2, dtype="O")
+print_series(346, df)
+print_series(347, df.apply(pd.to_datetime))
+df = pd.DataFrame([["1.1", 2, 3]] * 2, dtype="O")
+print_series(348, df)
+print_series(349, df.apply(pd.to_numeric))
+df = pd.DataFrame([["5us", pd.Timedelta("1day")]] * 2, dtype="O")
+print_series(350, df)
+print_series(351, df.apply(pd.to_timedelta))
+dfi = df3.astype("int32")
+dfi["E"] = 1
+print_series(352, dfi)
+print_series(353, dfi.dtypes)
+casted = dfi[dfi > 0]
+print_series(354, casted)
+print_series(355, casted.dtypes)
+dfa = df3.copy()
+dfa["A"] = dfa["A"].astype("float32")
+print_series(356, dfa.dtypes)
+df = pd.DataFrame(
+    {
+        "string": list("abc"),
+        "int64": list(range(1, 4)),
+        "uint8": np.arange(3, 6).astype("u1"),
+        "float64": np.arange(4.0, 7.0),
+        "bool1": [True, False, True],
+        "bool2": [False, True, False],
+        "dates": pd.date_range("now", periods=3),
+        "category": pd.Series(list("ABC")).astype("category"),
+    }
+)
+df["tdeltas"] = df.dates.diff()
+df["uint64"] = np.arange(3, 6).astype("u8")
+df["other_dates"] = pd.date_range("20130101", periods=3)
+df["tz_aware_dates"] = pd.date_range("20130101", periods=3, tz="US/Eastern")
+print_series(357, df)
+print_series(358, df.dtypes)
+data = "col1,col2,col3\na,b,1\na,b,2\nc,d,3"
+df = pd.read_csv(StringIO(data))
+print_series(359, df)
+pd.read_csv(StringIO(data), usecols=lambda x: x.upper() in ["COL1", "COL3"])
+df = pd.read_csv("./testing/data.csv")
+print_series(360, df)
+df = pd.read_csv("./testing/data.csv", header=None)
+print_series(361, df)
+df = pd.read_csv("./testing/data.csv", index_col="Value")
+print_series(362, df)
+df = pd.read_csv("./testing/data.csv", dtype={"Value": float})
+print_series(363, df)
+df = pd.read_csv("./testing/data.csv", na_values=["foo", "bar"])
+print_series(364, df)
+df = pd.read_csv("./testing/data.csv", comment="#")
+print_series(365, df)
+df = pd.read_csv("./testing/tmp.csv")
+print_series(366, df)
+print_series(367, df.dtypes)
+df = pd.read_csv(
+    "./testing/tmp.csv",
+    parse_dates=[1, 2],
+    date_format={"col 2": "%d/%m/%Y", "col 3": "%a %d %b %Y"},
+)
+print_series(368, df.dtypes)
+data = "col1,col2,col3\na,b,1\na,b,2\nc,d,3"
+df = pd.read_csv(StringIO(data))
+print_series(369, df)
+df = pd.read_csv(StringIO(data), skiprows=lambda x: x % 2 != 0)
+print_series(370, df)
+data = "a,b,c,d\n1,2,3,4\n5,6,7,8\n9,10,11"
+df = pd.read_csv(StringIO(data), dtype=object)
+print_series(371, df)
+print_series(372, df["a"][0])
+df = pd.read_csv(StringIO(data), dtype={"b": object, "c": np.float64, "d": "Int64"})
+print_series(373, df.dtypes)
+data = "col_1\n1\n2\n'A'\n4.22"
+df = pd.read_csv(StringIO(data))
+print_series(374, df)
+print_series(375, df["col_1"].apply(type).value_counts())
+df2 = pd.read_csv(StringIO(data))
+df2["col_1"] = pd.to_numeric(df2["col_1"], errors="coerce")
+print_series(376, df2)
+print_series(377, df2["col_1"].apply(type).value_counts())
+col_1 = list(range(500000)) + ["a", "b"] + list(range(500000))
+df = pd.DataFrame({"col_1": col_1})
+df.to_csv("./testing/foo.csv")
+mixed_df = pd.read_csv("./testing/foo.csv")
+print_series(378, mixed_df["col_1"].apply(type).value_counts())
+
+print("end_time - start_time:", time.time() - start_time)
