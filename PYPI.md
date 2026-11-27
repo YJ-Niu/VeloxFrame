@@ -1,8 +1,8 @@
-# rsdata
+# VeloxFrame
 
 **DataFrame-compatible API, Rust-powered performance**
 
-rsdata 是一个高性能的 DataFrame 兼容数据分析库，使用 Rust 构建核心计算引擎。提供与主流库一致的 API 接口，同时获得接近原生的执行性能。
+VeloxFrame 是一个高性能的 DataFrame 兼容数据分析库，使用 Rust 构建核心计算引擎。提供与主流库一致的 API 接口，同时获得接近原生的执行性能。
 
 ## 特性
 
@@ -16,7 +16,7 @@ rsdata 是一个高性能的 DataFrame 兼容数据分析库，使用 Rust 构�
 ## 安装
 
 ```bash
-pip install rsdata
+pip install VeloxFrame
 ```
 
 要求 Python >= 3.9。
@@ -24,7 +24,7 @@ pip install rsdata
 ## 快速开始
 
 ```python
-import rsdata as rpd
+import veloxframe as rpd
 
 # 创建 DataFrame
 df = rpd.DataFrame({

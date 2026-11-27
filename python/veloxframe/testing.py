@@ -1,4 +1,4 @@
-"""rsdata.testing - 断言工具函数。
+"""veloxframe.testing - 断言工具函数。
 
 对齐主流库的 ``pandas.testing`` 命名空间：``assert_frame_equal`` /
 ``assert_series_equal`` / ``assert_index_equal``，用于测试中比较
@@ -93,7 +93,9 @@ def assert_series_equal(
             except (TypeError, ValueError):
                 same = False
         if not same:
-            raise AssertionError(f"Series value mismatch at position {i}: {a!r} != {b!r}")
+            raise AssertionError(
+                f"Series value mismatch at position {i}: {a!r} != {b!r}"
+            )
     if check_dtype:
         ld = str(left.dtype)
         rd = str(right.dtype)

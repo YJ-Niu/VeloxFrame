@@ -1,6 +1,6 @@
 """CSV 读写：read_csv / read_csv_chunked / to_csv
 
-由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
+由 veloxframe/io.py 拆分而来，向后兼容通过 :mod:`veloxframe.io` 包入口保证。
 """
 
 from __future__ import annotations
@@ -230,7 +230,7 @@ def read_csv(
         and (not isinstance(effective_header, int) or effective_header <= 0)
     )
     if _is_fast_path:
-        from ..rsdata import read_csv_path_raw as _read_csv_path_raw
+        from ..veloxframe import read_csv_path_raw as _read_csv_path_raw
 
         _path = str(filepath_or_buffer)
         # 推断压缩格式
@@ -271,7 +271,7 @@ def read_csv(
         and header_rows_count <= 1
     )
     if _is_typed_fast:
-        from ..rsdata import read_csv_path_typed as _read_csv_path_typed
+        from ..veloxframe import read_csv_path_typed as _read_csv_path_typed
 
         _path = str(filepath_or_buffer)
         _skiprows_list: Optional[list] = None
@@ -442,7 +442,7 @@ def read_csv(
         if len(sep) != 1:
             return _DataFrame()
 
-        from ..rsdata import parse_csv_raw as _parse_csv_raw
+        from ..veloxframe import parse_csv_raw as _parse_csv_raw
 
         try:
             rust_headers, cols_data = _parse_csv_raw(
@@ -842,8 +842,8 @@ def read_csv_chunked(
         return
 
     try:
-        from ..rsdata import read_csv_chunks as _read_csv_chunks_rust
-        from ..rsdata import read_file_to_string as _read_file_to_string
+        from ..veloxframe import read_csv_chunks as _read_csv_chunks_rust
+        from ..veloxframe import read_file_to_string as _read_file_to_string
 
         content = _read_file_to_string(path)
         chunks = _read_csv_chunks_rust(
@@ -881,7 +881,7 @@ def to_csv(
     df: DataFrame, path=None, sep: str = ",", index: bool = True, **kwargs
 ) -> Optional[str]:
     """将 DataFrame 写入 CSV 文件或返回 CSV 字符串。"""
-    from ..rsdata import write_csv_string as _write_csv_string
+    from ..veloxframe import write_csv_string as _write_csv_string
 
     # 使用 Rust 层的 write_csv_string
     cols = list(df.columns)
@@ -889,7 +889,7 @@ def to_csv(
     csv_str = _write_csv_string(cols, series_list, True, sep)
 
     if path:
-        from ..rsdata import write_csv_path as _write_csv_path
+        from ..veloxframe import write_csv_path as _write_csv_path
 
         _write_csv_path(path, cols, series_list, True, sep)
         return None

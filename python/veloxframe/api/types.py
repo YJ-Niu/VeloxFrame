@@ -1,4 +1,4 @@
-"""rsdata.api.types - 类型判断函数。
+"""veloxframe.api.types - 类型判断函数。
 
 提供与 api.types 兼容的类型检查函数。
 """

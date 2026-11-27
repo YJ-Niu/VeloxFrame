@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from ..rsdata import _DataFrame as rsdata_DataFrame  # type: ignore
+from ..veloxframe import _DataFrame as veloxframe_DataFrame  # type: ignore
 from ..series import Series
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union
@@ -20,7 +20,7 @@ def get_dummies(
     prefix: Optional[Union[str, List[str]]] = None,
     prefix_sep: str = "_",
     columns: Optional[List[str]] = None,
-) -> rsdata_DataFrame:
+) -> veloxframe_DataFrame:
     """将分类变量转换为哑变量（one-hot 编码）。
 
     Parameters
@@ -74,7 +74,7 @@ def get_dummies(
     )
 
 
-def _get_dummies_series(values: list, prefix: str, sep: str) -> rsdata_DataFrame:
+def _get_dummies_series(values: list, prefix: str, sep: str) -> veloxframe_DataFrame:
     """对单个 Series 做 one-hot 编码。"""
     from ..dataframe import DataFrame as _DataFrame
 
@@ -90,7 +90,7 @@ def _get_dummies_series(values: list, prefix: str, sep: str) -> rsdata_DataFrame
     return _DataFrame(result_data)
 
 
-def _concat_frames(frames: list) -> rsdata_DataFrame:
+def _concat_frames(frames: list) -> veloxframe_DataFrame:
     """横向拼接 DataFrame，去掉重复列。"""
     from ..dataframe import DataFrame as _DataFrame
 
@@ -321,7 +321,7 @@ def crosstab(
     colnames=None,
     margins: bool = False,
     normalize: Union[bool, str] = False,
-) -> rsdata_DataFrame:
+) -> veloxframe_DataFrame:
     """计算交叉表。
 
     Parameters

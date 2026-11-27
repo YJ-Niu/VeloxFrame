@@ -1,6 +1,6 @@
 """时间差：to_timedelta / timedelta_range
 
-由 rsdata/_datetime.py 拆分而来。
+由 veloxframe/_datetime.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ def to_timedelta(arg, unit=None, errors: str = "raise"):
             if errors == "ignore":
                 return arg
             raise
-    # rsdata.Timedelta 对象
+    # veloxframe.Timedelta 对象
     if hasattr(arg, "_td") and isinstance(getattr(arg, "_td", None), timedelta):
         return arg._td
     if isinstance(arg, (list, tuple)):

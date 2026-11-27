@@ -1,6 +1,6 @@
 """SQL 读写：read_sql / read_sql_query / read_sql_table / to_sql / to_sql_batch
 
-由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
+由 veloxframe/io.py 拆分而来，向后兼容通过 :mod:`veloxframe.io` 包入口保证。
 """
 
 from __future__ import annotations

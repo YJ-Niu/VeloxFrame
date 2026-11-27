@@ -1,4 +1,4 @@
-import rsdata as pd
+import veloxframe as pd
 import rsarray as np
 import time
 import rsplotlib.pyplot as plt
@@ -14,8 +14,8 @@ def print_series(num, s):
 # 查看有没有./testing文件夹，没有就创建
 if not os.path.exists("./testing"):
     os.makedirs("./testing")
-if not os.path.exists("./testing/rsdata"):
-    os.makedirs("./testing/rsdata")
+if not os.path.exists("./testing/veloxframe"):
+    os.makedirs("./testing/veloxframe")
 
 
 s = pd.Series([1, 3, 5, np.nan, 6, 8])
@@ -187,7 +187,7 @@ ts = pd.Series(np.random.randn(1000), index=pd.date_range("1/1/2000", periods=10
 
 ts = ts.cumsum()
 ts.plot()
-plt.savefig("./testing/rsdata/test1.png")
+plt.savefig("./testing/veloxframe/test1.png")
 df = pd.DataFrame(
     np.random.randn(1000, 4), index=ts.index, columns=["A", "B", "C", "D"]
 )
@@ -195,15 +195,15 @@ df = df.cumsum()
 plt.figure()
 df.plot()
 plt.legend(loc='best')
-plt.savefig("./testing/rsdata/test2.png")
+plt.savefig("./testing/veloxframe/test2.png")
 df = pd.DataFrame(np.random.randint(0, 5, (10, 5)))
-df.to_csv("./testing/rsdata/test3.csv")
-print_series(82, pd.read_csv("./testing/rsdata/test3.csv"))
+df.to_csv("./testing/veloxframe/test3.csv")
+print_series(82, pd.read_csv("./testing/veloxframe/test3.csv"))
  
-df.to_parquet("./testing/rsdata/test4.parquet")
-print_series(83, pd.read_parquet("./testing/rsdata/test4.parquet"))
-df.to_excel("./testing/rsdata/test5.xlsx", sheet_name="Sheet1")
-print_series(84, pd.read_excel("./testing/rsdata/test5.xlsx", "Sheet1", index_col=None, na_values=["NA"]))
+df.to_parquet("./testing/veloxframe/test4.parquet")
+print_series(83, pd.read_parquet("./testing/veloxframe/test4.parquet"))
+df.to_excel("./testing/veloxframe/test5.xlsx", sheet_name="Sheet1")
+print_series(84, pd.read_excel("./testing/veloxframe/test5.xlsx", "Sheet1", index_col=None, na_values=["NA"]))
 
 end_time = time.time()
 print("Time cost:", end_time - start_time)

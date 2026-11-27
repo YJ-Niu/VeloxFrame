@@ -5,7 +5,7 @@ import datetime  # noqa: E402
 import rsarray as np  # noqa: E402
 from collections import namedtuple  # noqa: E402
 from dataclasses import make_dataclass  # noqa: E402
-import rsdata as pd  # noqa: E402
+import veloxframe as pd  # noqa: E402
 from io import StringIO  # noqa: E402
 
 
@@ -164,8 +164,8 @@ print_series(87, pd.DataFrame(np.random.randn(3, 12)))
 datafile = {
     "filename": ["filename_01", "filename_02"],
     "path": [
-        "./testing/rsdata/filename_01",
-        "./testing/rsdata/filename_02",
+        "./testing/veloxframe/filename_01",
+        "./testing/veloxframe/filename_02",
     ],
 }
 pd.set_option("display.max_colwidth", 30)

@@ -1,6 +1,6 @@
 """日期时间：DatetimeSeries / DatetimeAccessor / to_datetime / date_range / bdate_range / infer_freq
 
-由 rsdata/_datetime.py 拆分而来。
+由 veloxframe/_datetime.py 拆分而来。
 """
 
 from __future__ import annotations

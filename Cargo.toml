@@ -1,10 +1,10 @@
 [package]
-name = "rsdata"
+name = "veloxframe"
 version = "1.0.1"
 edition = "2024"
 
 [lib]
-name = "rsdata"
+name = "veloxframe"
 crate-type = ["cdylib", "rlib"]
 path = "rust/src/lib.rs"
 
@@ -39,7 +39,7 @@ lto = "thin"
 strip = "symbols"
 panic = "abort"
 
-# 第三方依赖用 opt-level="z"（体积优先），rsdata 自身代码保持 opt-level=3（性能优先）。
+# 第三方依赖用 opt-level="z"（体积优先），veloxframe 自身代码保持 opt-level=3（性能优先）。
 # 这样在不牺牲自身数据处理性能的前提下，大幅压缩 arrow/parquet 等大依赖的 .so 体积。
 # [profile.release.package."*"]
 # opt-level = "z"

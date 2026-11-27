@@ -1,4 +1,4 @@
-//! rsdata 核心模块
+//! veloxframe 核心模块
 //!
 //! 按功能拆分为子模块：
 //! - :mod:`.dtype`：数据类型 (DType / ColumnData)

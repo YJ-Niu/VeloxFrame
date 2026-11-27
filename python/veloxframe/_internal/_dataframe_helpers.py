@@ -1,6 +1,6 @@
 """DataFrame 内部辅助函数
 
-由 rsdata/dataframe.py 拆分而来。
+由 veloxframe/dataframe.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import rsarray as rnp
 
-from ..rsdata import _Series as _PySeries  # type: ignore
+from ..veloxframe import _Series as _PySeries  # type: ignore
 
 
 def _is_ndarray(data: Any) -> bool:
@@ -60,7 +60,7 @@ def _convert_to_basic(v: Any) -> Any:
         if hours == 0 and minutes == 0 and secs == 0:
             return f"{days} days"
         return f"{days} days {hours:02d}:{minutes:02d}:{secs:02d}"
-    # rsdata.Timedelta 对象
+    # veloxframe.Timedelta 对象
     if hasattr(v, "_td") and isinstance(getattr(v, "_td", None), timedelta):
         return _convert_to_basic(v._td)
     # 其他可转换对象 -> str

@@ -7,7 +7,7 @@
 
 用法::
 
-    >>> from rsdata.lazyframe import lazy, col
+    >>> from veloxframe.lazyframe import lazy, col
     >>> df = DataFrame({"x": [1, 2, 3, 4], "y": [10, 20, 30, 40]})
     >>> result = (
     ...     lazy(df)

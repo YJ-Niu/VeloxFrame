@@ -37,8 +37,8 @@ def read_json(
     -------
     DataFrame
     """
-    from ..rsdata import _DataFrame
-    from ..rsdata import read_json as _read_json_rust
+    from ..veloxframe import _DataFrame
+    from ..veloxframe import read_json as _read_json_rust
 
     headers, series_list = _read_json_rust(path, orient, lines, encoding)
     return DataFrame._from_inner(_DataFrame(headers, series_list))
@@ -91,7 +91,7 @@ def to_json(
     -------
     str or None
     """
-    from ..rsdata import write_json as _write_json_rust
+    from ..veloxframe import write_json as _write_json_rust
 
     # 默认 orient
     if orient is None:

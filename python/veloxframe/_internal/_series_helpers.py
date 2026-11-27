@@ -1,6 +1,6 @@
 """Series 内部辅助函数与工具类
 
-由 rsdata/series.py 拆分而来。
+由 veloxframe/series.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -8,8 +8,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Optional, Union
 
-from ..rsdata import _DataFrame as _PyDataFrame  # type: ignore
-from ..rsdata import _Series as _PySeries  # type: ignore
+from ..veloxframe import _DataFrame as _PyDataFrame  # type: ignore
+from ..veloxframe import _Series as _PySeries  # type: ignore
 
 if TYPE_CHECKING:
     from ..series import Series  # noqa: F401  # 类型注解使用

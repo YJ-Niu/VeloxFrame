@@ -1,6 +1,6 @@
 """IO 公共辅助：日期解析/dtype 推断/文本读取器等内部工具
 
-由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
+由 veloxframe/io.py 拆分而来，向后兼容通过 :mod:`veloxframe.io` 包入口保证。
 """
 
 from __future__ import annotations
@@ -274,7 +274,7 @@ def _read_content(filepath_or_buffer, compression, encoding, encoding_errors):
                 content = f.read()
                 return content.decode(enc, errors=encoding_errors)
     # 无压缩：使用 Rust 层读取文件内容
-    from ..rsdata import read_file_to_string as _read_file_to_string
+    from ..veloxframe import read_file_to_string as _read_file_to_string
 
     return _read_file_to_string(path)
 
@@ -480,7 +480,7 @@ class StreamDataFrame:
 
     用法::
 
-        >>> from rsdata.io import StreamDataFrame
+        >>> from veloxframe.io import StreamDataFrame
         >>> sdf = StreamDataFrame(read_csv_chunked('big.csv', chunk_size=100))
         >>> result = sdf.filter(lambda df: df['val'] > 0).map(lambda df: df.head(10)).collect()
     """

@@ -1,13 +1,13 @@
-# rsdata 项目开发规则
+# veloxframe 项目开发规则
 
 ## 项目概述
 
-rsdata 是一个使用 **Rust + PyO3** 开发的高性能 Python 数据分析库，提供与主流 DataFrame 库兼容的 API 接口。
+veloxframe 是一个使用 **Rust + PyO3** 开发的高性能 Python 数据分析库，提供与主流 DataFrame 库兼容的 API 接口。
 
 - **Rust 层** (`rust/src/`): 负责底层核心实现，包括 `PySeries` 和 `PyDataFrame` 两个核心类，以及 CSV/Excel/Parquet/Feather/JSON IO 操作。
-- **Python 层** (`python/rsdata/`): 负责公开 API 接口，方法参数默认值要全面，代理调用 Rust 底层实现。
+- **Python 层** (`python/veloxframe/`): 负责公开 API 接口，方法参数默认值要全面，代理调用 Rust 底层实现。
 - **构建工具**: 使用 `maturin` 构建 wheel，通过 `build_wheel.sh` 脚本构建并安装到 `.venv`。
-- **依赖关系**: rsdata 与 rsarray 协同工作——rsarray 提供底层 ndarray 支持，rsdata 在其上构建 Series/DataFrame。rsarray 是 rsdata 的**必选依赖**（在 `pyproject.toml` 的 `dependencies` 中声明），Python 层通过 `import rsarray as rnp` 直接引用。
+- **依赖关系**: veloxframe 与 rsarray 协同工作——rsarray 提供底层 ndarray 支持，veloxframe 在其上构建 Series/DataFrame。rsarray 是 veloxframe 的**必选依赖**（在 `pyproject.toml` 的 `dependencies` 中声明），Python 层通过 `import rsarray as rnp` 直接引用。
 
 ## 开发环境
 
@@ -40,29 +40,29 @@ rsdata 是一个使用 **Rust + PyO3** 开发的高性能 Python 数据分析库
 
 ### 1. Debug 目录
 
-- 所有调试、分析代码必须放在 `/Users/user/Desktop/rust_project/rsdata/debug/` 目录中
+- 所有调试、分析代码必须放在 `/Users/user/Desktop/rust_project/veloxframe/debug/` 目录中
 - **所有测试（含构建/冒烟测试）统一放在 `testing/` 目录**（如 `testing/smoke_test.py`）
 - 禁止在项目根目录或其他位置创建零散的测试文件
-- 禁止在 `rsdata` 项目内引用其他数组库（包括直接或间接），统一使用 `rsarray` 提供的 `ndarray` 类型。
+- 禁止在 `veloxframe` 项目内引用其他数组库（包括直接或间接），统一使用 `rsarray` 提供的 `ndarray` 类型。
 - 调试时，添加一些 debug 信息，如打印数组形状、dtype、内存布局等，也要判断数据是否正确加载
 
 ### 2. 代码修改范围
 
-- **可以修改**: `rsdata` 项目内的代码 (`rust/src/`, `python/rsdata/`, `pyproject.toml`, `Cargo.toml`, `testing/`, `test/test_rf/` 等)
+- **可以修改**: `veloxframe` 项目内的代码 (`rust/src/`, `python/veloxframe/`, `pyproject.toml`, `Cargo.toml`, `testing/`, `test/test_rf/` 等)
 - **禁止修改**: 用户测试代码（如 `test/lotus/`）、`.venv` 环境中的任何代码
 - 修改后使用 `build_wheel.sh` 构建并安装到 `.venv` 进行测试
 
 ### 3. 修复优先级
 
 - 优先在 **Rust 层** (`rust/src/`) 实现底层修复
-- 然后在 **Python 层** (`python/rsdata/`) 补全和优化方法接口
+- 然后在 **Python 层** (`python/veloxframe/`) 补全和优化方法接口
 - 确保 Python 接口的默认参数全面，与主流库行为一致
 
 ### 4. 依赖库处理
 
 - **禁止**安装其他第三方 Python 数值/表格库（如科学计算库的核心功能）
 - 项目自身即为 DataFrame 兼容库，应完善自身实现而非引入外部表格库
-- 如需使用主流库来测试或验证功能与 rsdata 进行对比，验证完后，及时删除或注释掉相关代码，确保 rsdata 里没有引用的外部表格库代码
+- 如需使用主流库来测试或验证功能与 veloxframe 进行对比，验证完后，及时删除或注释掉相关代码，确保 veloxframe 里没有引用的外部表格库代码
 
 ### 5. 代码风格
 
@@ -94,7 +94,7 @@ rsdata 是一个使用 **Rust + PyO3** 开发的高性能 Python 数据分析库
 
 ### 8. 缓冲协议架构（rsarray 层）
 
-rsdata 依赖 rsarray 提供底层 ndarray 支持。rsarray 通过双层缓冲协议实现零拷贝数据共享，同时保证 dtype 精度：
+veloxframe 依赖 rsarray 提供底层 ndarray 支持。rsarray 通过双层缓冲协议实现零拷贝数据共享，同时保证 dtype 精度：
 
 - **内层 Rust 层** (`_core.ndarray`)：实现 PEP 3118 的 `__getbuffer__`/`__releasebuffer__`，直接暴露底层 `Array<f64, IxDyn>` 的连续内存，支持 shape/strides/format='d'/readonly。
 
@@ -109,14 +109,14 @@ rsdata 依赖 rsarray 提供底层 ndarray 支持。rsarray 通过双层缓冲�
 - **f64 唯一存储**：rsarray 底层数组恒为 `Array<f64, IxDyn>`，int64/bool/datetime64 等 dtype 仅在 Python 层通过 `_dtype` 追踪。
 - **int64 精度丢失**：大于 `2^53` 的整数会因 f64 存储限制而丢失精度，即使 `typestr` 报 `<i8`。
 - **datetime64/timedelta64**：内部存储为 f64 纪元值，`dtype.kind` 返回 `'f'`，日期零拷贝需未来引入独立整型存储。
-- **rsarray 必选依赖**：rsdata 的 `pyproject.toml` 声明 `dependencies = ["rsarray"]`，Python 层通过 `import rsarray as rnp` 直接引用，使用 `isinstance(data, rnp.ndarray)` 进行类型检测。
+- **rsarray 必选依赖**：veloxframe 的 `pyproject.toml` 声明 `dependencies = ["rsarray"]`，Python 层通过 `import rsarray as rnp` 直接引用，使用 `isinstance(data, rnp.ndarray)` 进行类型检测。
 
 ### 10. 测试规范
 
 - **新增功能必须附带测试**：Rust 层新增公共函数应在其模块内增加 `#[cfg(test)]` 单元测试；Python 层新增 API 应在 `testing/` 目录补充对应测试用例。
 - **测试数据隔离**：测试用例使用的临时文件、随机种子必须固定或清理，避免跨测试污染。
 - **兼容性测试**：若修改涉及与 rsarray/主流库的交互行为（如 `__array_ufunc__`、`__array_function__`），需同步验证 `test/test_rf/` 下的 scipy 兼容层是否仍通过。
-- **禁止在测试代码中引入主流库依赖**：功能验证应优先使用 rsdata 自身 API，若必须与主流库对比，对比完成后及时删除或注释相关引入代码。
+- **禁止在测试代码中引入主流库依赖**：功能验证应优先使用 veloxframe 自身 API，若必须与主流库对比，对比完成后及时删除或注释相关引入代码。
 
 ### 11. 错误处理与异常映射
 
@@ -139,7 +139,7 @@ rsdata 依赖 rsarray 提供底层 ndarray 支持。rsarray 通过双层缓冲�
 ## 项目结构
 
 ```
-rsdata/
+veloxframe/
 ├── rust/                       # Rust 源码
 │   └── src/
 │       ├── lib.rs              # 库入口，PyO3 模块注册
@@ -150,7 +150,7 @@ rsdata/
 │           ├── dataframe/      # PyDataFrame 实现（Rust 端 DataFrame）
 │           └── io/             # CSV/Excel/Parquet/Feather/JSON IO
 ├── python/                     # Python 源码
-│   └── rsdata/                 # Python 包
+│   └── veloxframe/                 # Python 包
 │       ├── __init__.py         # 包入口，导出核心 API，全局选项配置
 │       ├── series.py           # Series 类及辅助类（Rolling/Expanding/EWM/Resampler/
 │       │                       #   StringAccessor/CatAccessor/DatetimeAccessor/SeriesGroupBy）
@@ -159,7 +159,7 @@ rsdata/
 │       ├── _datetime/          # 日期时间函数（to_datetime/date_range/to_timedelta 等）
 │       ├── io/                 # IO 接口（read_csv/read_json/read_excel/read_parquet 等）
 │       ├── offsets.py          # 时间偏移量
-│       ├── rsdata_api.pyi      # 类型存根文件
+│       ├── veloxframe_api.pyi      # 类型存根文件
 │       └── api/                # API 子模块
 │           ├── __init__.py     # API 模块入口
 │           └── types.py        # 类型检查函数（is_numeric_dtype/is_string_dtype 等）

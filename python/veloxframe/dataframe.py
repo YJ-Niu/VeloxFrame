@@ -24,9 +24,9 @@ from ._internal._dataframe_helpers import (
     _normalize_dtype,
     _to_pylist_columns,
 )
-from rsdata.rsdata import _DataFrame as _PyDataFrame  # type: ignore
-from rsdata.rsdata import _Series as _PySeries
-from rsdata.rsdata import (
+from veloxframe.veloxframe import _DataFrame as _PyDataFrame  # type: ignore
+from veloxframe.veloxframe import _Series as _PySeries
+from veloxframe.veloxframe import (
     read_csv_path,
     read_csv_string,
 )
@@ -3978,7 +3978,7 @@ class DataFrame:
             raise ImportError("pyarrow is required for to_arrow()")
         from io import BytesIO
 
-        from .rsdata import to_arrow_ipc_bytes as _to_ipc_bytes
+        from .veloxframe import to_arrow_ipc_bytes as _to_ipc_bytes
 
         cols = list(self._columns)
         series_list = [self._inner.get_column(c) for c in cols]
@@ -4010,7 +4010,7 @@ class DataFrame:
             raise ImportError("pyarrow is required for from_arrow()")
         from io import BytesIO
 
-        from .rsdata import from_arrow_ipc_bytes as _from_ipc_bytes
+        from .veloxframe import from_arrow_ipc_bytes as _from_ipc_bytes
 
         if not isinstance(table, pa.Table):
             raise TypeError("expected pyarrow.Table")
@@ -4469,7 +4469,7 @@ class DataFrame:
 
         # 处理索引列
         if index and self._index:
-            from .rsdata import _Series as _PySeries
+            from .veloxframe import _Series as _PySeries
 
             idx_series = _PySeries(self._index, index_label if index_label else "")
             columns_to_write = [index_label if index_label else ""] + selected_columns
@@ -4510,8 +4510,8 @@ class DataFrame:
                     break
         if _rust_ok:
             import os
-            from .rsdata import write_csv_path as _wc_path
-            from .rsdata import write_csv_string as _wc_str
+            from .veloxframe import write_csv_path as _wc_path
+            from .veloxframe import write_csv_string as _wc_str
 
             _include_header = bool(header)
             _cols = [str(c) for c in columns_to_write]
@@ -4559,12 +4559,12 @@ class DataFrame:
 
         if lineterminator is not None:
             content = lineterminator.join(content_lines)
-            # 与 rsdata 行为一致：每行（含最后一行）以行终止符结尾
+            # 与 veloxframe 行为一致：每行（含最后一行）以行终止符结尾
             if content and not content.endswith(lineterminator):
                 content += lineterminator
         else:
             content = "\n".join(content_lines)
-            # 与 rsdata 行为一致：每行（含最后一行）以换行符结尾
+            # 与 veloxframe 行为一致：每行（含最后一行）以换行符结尾
             if content and not content.endswith("\n"):
                 content += "\n"
 
@@ -4613,7 +4613,7 @@ class DataFrame:
                 with bz2.open(path, mode + "t", encoding=encoding, errors=errors) as f:
                     f.write(content)
             else:
-                from .rsdata import write_string_to_file as _write_string_to_file
+                from .veloxframe import write_string_to_file as _write_string_to_file
 
                 _write_string_to_file(path, content)
         else:
@@ -4765,7 +4765,7 @@ class DataFrame:
                 # 重建 _inner（不含该列）
                 remaining_cols = list(df._columns)
                 remaining_series = [df._inner.get_column(c) for c in remaining_cols]
-                from .rsdata import _DataFrame as _PyDataFrame
+                from .veloxframe import _DataFrame as _PyDataFrame
 
                 df._inner = _PyDataFrame(remaining_cols, remaining_series)
                 df._nrows = len(idx_values)
@@ -5043,7 +5043,7 @@ class DataFrame:
     def info(self) -> None:
         nrows = self._nrows
         ncols = len(self._columns)
-        print("<class 'rsdata.DataFrame'>")
+        print("<class 'veloxframe.DataFrame'>")
         print(f"RangeIndex: {nrows} entries, 0 to {nrows - 1}")
         print(f"Data columns (total {ncols} columns):")
         col_width = 15
@@ -10028,7 +10028,7 @@ class DataFrame:
         :return: LazyFrame 实例
 
         Examples:
-            >>> from rsdata import col
+            >>> from veloxframe import col
             >>> result = df.lazy().filter(col('x') > 0).select(['x', 'y']).collect()
         """
         from .lazyframe import LazyFrame
@@ -10364,9 +10364,15 @@ class DataFrame:
 
                 try:
                     parsed = _to_datetime(on_vals)
-                    on_vals = list(parsed.values) if hasattr(parsed, "values") else list(parsed)
+                    on_vals = (
+                        list(parsed.values)
+                        if hasattr(parsed, "values")
+                        else list(parsed)
+                    )
                 except Exception as exc:
-                    raise TypeError("resample(on=...) requires a datetime column") from exc
+                    raise TypeError(
+                        "resample(on=...) requires a datetime column"
+                    ) from exc
                 if not all(isinstance(v, datetime) for v in on_vals if v is not None):
                     raise TypeError("resample(on=...) requires a datetime column")
             return _DataFrameResampler(self, rule, on_vals, on_column=on)
@@ -10389,7 +10395,9 @@ class DataFrame:
             raise ValueError("index must be monotonic for asof")
         single = not isinstance(where, (list, tuple))
         ws = [where] if single else list(where)
-        col_vals = {c: list(self._get_column_as_series(c).values) for c in self._columns}
+        col_vals = {
+            c: list(self._get_column_as_series(c).values) for c in self._columns
+        }
         rows = {c: [] for c in self._columns}
         for w in ws:
             row_i = None
@@ -10419,6 +10427,9 @@ class DataFrame:
             raise NotImplementedError(
                 "only 2D matrix reshape is supported (value_index=... not supported)"
             )
+        # 支持单个 (nrows, ncols) tuple 入参 (pandas 对齐)
+        if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
+            shape = tuple(shape[0])
         if len(shape) != 2:
             raise ValueError("reshape requires exactly 2 dimensions")
         r, c = int(shape[0]), int(shape[1])
@@ -10427,7 +10438,9 @@ class DataFrame:
             raise ValueError(f"cannot reshape array of size {n} into shape {(r, c)}")
         if order != "C":
             raise NotImplementedError("only order='C' is supported")
-        col_vals = {cn: self._get_column_as_series(cn).to_list() for cn in self._columns}
+        col_vals = {
+            cn: self._get_column_as_series(cn).to_list() for cn in self._columns
+        }
         flat: list = []
         for i in range(self._nrows):
             for cn in self._columns:

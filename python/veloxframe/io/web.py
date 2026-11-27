@@ -1,6 +1,6 @@
 """HTML / Clipboard / XML 读写
 
-由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
+由 veloxframe/io.py 拆分而来，向后兼容通过 :mod:`veloxframe.io` 包入口保证。
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ def to_html(df: DataFrame, path=None, index: bool = True, **kwargs) -> Optional[
 
     基于 Rust 层构建 HTML 字符串，释放 GIL 避免 Python 层循环开销。
     """
-    from ..rsdata import to_html as _to_html_rust
+    from ..veloxframe import to_html as _to_html_rust
 
     cols = list(df.columns)
     series_list = [df._inner.get_column(c) for c in cols]
@@ -198,7 +198,7 @@ def to_xml(
 
     基于 Rust 层构建 XML 字符串，释放 GIL 避免 Python 层循环开销。
     """
-    from ..rsdata import to_xml as _to_xml_rust
+    from ..veloxframe import to_xml as _to_xml_rust
 
     cols = list(df.columns)
     series_list = [df._inner.get_column(c) for c in cols]

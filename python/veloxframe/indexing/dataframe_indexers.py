@@ -1,6 +1,6 @@
 """DataFrame 索引器 (Loc/ILoc/Iat/At)
 
-由 rsdata/dataframe.py 拆分而来。
+由 veloxframe/dataframe.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -621,6 +621,6 @@ class _LazyProxy:
 
 # 安装懒加载代理
 if "Series" not in globals() or not callable(globals().get("Series", None)):
-    Series = _LazyProxy("rsdata.series", "Series")
+    Series = _LazyProxy("veloxframe.series", "Series")
 if "DataFrame" not in globals() or not callable(globals().get("DataFrame", None)):
-    DataFrame = _LazyProxy("rsdata.dataframe", "DataFrame")
+    DataFrame = _LazyProxy("veloxframe.dataframe", "DataFrame")

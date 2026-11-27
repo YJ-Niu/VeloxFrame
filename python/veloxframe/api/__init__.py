@@ -1,4 +1,4 @@
-"""rsdata.api - 公共 API 命名空间。
+"""veloxframe.api - 公共 API 命名空间。
 
 对齐主流库的 ``pd.api``：``pd.api.types`` 提供类型检查函数。
 """

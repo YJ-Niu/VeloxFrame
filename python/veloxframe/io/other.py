@@ -1,6 +1,6 @@
 """ORC / Stata / HDF / SPSS / GBQ 等其他 IO
 
-由 rsdata/io.py 拆分而来，向后兼容通过 :mod:`rsdata.io` 包入口保证。
+由 veloxframe/io.py 拆分而来，向后兼容通过 :mod:`veloxframe.io` 包入口保证。
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def read_stata(path: str, **kwargs) -> DataFrame:
         import pyreadstat
 
         df, _ = pyreadstat.read_dta(path)
-        # 转换为 rsdata DataFrame
+        # 转换为 veloxframe DataFrame
         return DataFrame(df.to_dict(orient="list"))
     except ImportError:
         raise ImportError(
@@ -67,13 +67,13 @@ def read_stata(path: str, **kwargs) -> DataFrame:
 def to_stata(df: DataFrame, path: str, **kwargs) -> None:
     """将 DataFrame 写入 Stata .dta 文件。
 
-    由于 rsdata 不依赖 主流库，此函数回退为写入 CSV 格式。
+    由于 veloxframe 不依赖 主流库，此函数回退为写入 CSV 格式。
     如需真正的 .dta 格式，请手动转换为 主流库 DataFrame 后使用 pyreadstat。
     """
     import warnings
 
     warnings.warn(
-        "to_stata: rsdata 不依赖 主流库，无法直接写入 .dta 格式。"
+        "to_stata: veloxframe 不依赖 主流库，无法直接写入 .dta 格式。"
         "回退为写入 CSV 格式。如需 .dta 格式，请手动处理。"
     )
     from . import to_csv
@@ -116,7 +116,7 @@ def to_hdf(
     try:
         import tables
 
-        with tables.open_file(path_or_buf, mode=mode, title="rsdata_hdf") as h5file:
+        with tables.open_file(path_or_buf, mode=mode, title="veloxframe_hdf") as h5file:
             # 创建或覆盖表格
             if key in h5file:
                 h5file.remove_node(key)

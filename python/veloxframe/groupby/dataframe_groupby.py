@@ -1,6 +1,6 @@
 """DataFrameGroupBy DataFrame 分组
 
-由 rsdata/dataframe.py 拆分而来。
+由 veloxframe/dataframe.py 拆分而来。
 """
 
 from __future__ import annotations
@@ -57,9 +57,9 @@ class _LazyProxy:
 
 # 安装懒加载代理
 if "Series" not in globals() or not callable(globals().get("Series", None)):
-    Series = _LazyProxy("rsdata.series", "Series")
+    Series = _LazyProxy("veloxframe.series", "Series")
 if "DataFrame" not in globals() or not callable(globals().get("DataFrame", None)):
-    DataFrame = _LazyProxy("rsdata.dataframe", "DataFrame")
+    DataFrame = _LazyProxy("veloxframe.dataframe", "DataFrame")
 
 
 class DataFrameGroupBy:
@@ -1254,6 +1254,7 @@ class DataFrameGroupBy:
 
             def key_fn(i):
                 return by_vals[i]
+
         else:
             by_cols = [list(self._df[c].values) for c in self._by]
 
@@ -1291,9 +1292,7 @@ class DataFrameGroupBy:
         if normalize:
             scale = {c: sum(vc.values()) for c, vc in per_col.items()}
             out = {
-                c: [
-                    (vc.get(t) or 0) / scale[c] if scale[c] else None for t in all_keys
-                ]
+                c: [(vc.get(t) or 0) / scale[c] if scale[c] else None for t in all_keys]
                 for c, vc in per_col.items()
             }
         else:

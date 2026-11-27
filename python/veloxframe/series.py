@@ -23,8 +23,8 @@ from ._internal._series_helpers import (  # noqa: F401
 
 import rsarray as rnp
 
-from .rsdata import _DataFrame as _PyDataFrame
-from .rsdata import _Series as _PySeries  # type: ignore
+from .veloxframe import _DataFrame as _PyDataFrame
+from .veloxframe import _Series as _PySeries  # type: ignore
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Tuple
 

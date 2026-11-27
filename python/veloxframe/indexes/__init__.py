@@ -5,13 +5,13 @@
   / ``CategoricalIndex`` / ``DatetimeIndex`` / ``TimedeltaIndex`` / ``PeriodIndex``
 - ``binning``: ``cut`` / ``qcut`` / ``crosstab`` / ``get_dummies``
 
-向后兼容：``rsdata.indexes.Series`` / ``rsdata.indexes.rsdata_DataFrame``
+向后兼容：``veloxframe.indexes.Series`` / ``veloxframe.indexes.veloxframe_DataFrame``
 仍然可访问，供老代码使用。
 """
 
 from __future__ import annotations
 
-from ..rsdata import _DataFrame as rsdata_DataFrame  # type: ignore  # noqa: F401
+from ..veloxframe import _DataFrame as veloxframe_DataFrame  # type: ignore  # noqa: F401
 from ..series import Series  # noqa: F401
 from .base import (
     CategoricalIndex,
@@ -39,5 +39,5 @@ __all__ = [
     "crosstab",
     "get_dummies",
     "Series",
-    "rsdata_DataFrame",
+    "veloxframe_DataFrame",
 ]

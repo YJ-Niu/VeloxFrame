@@ -163,8 +163,8 @@ print_series(87, pd.DataFrame(np.random.randn(3, 12)))
 datafile = {
     "filename": ["filename_01", "filename_02"],
     "path": [
-        "./testing/rsdata/filename_01",
-        "./testing/rsdata/filename_02",
+        "./testing/veloxframe/filename_01",
+        "./testing/veloxframe/filename_02",
     ],
 }
 pd.set_option("display.max_colwidth", 30)

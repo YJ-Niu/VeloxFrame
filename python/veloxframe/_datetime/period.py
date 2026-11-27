@@ -1,6 +1,6 @@
 """周期：period_range
 
-由 rsdata/_datetime.py 拆分而来。
+由 veloxframe/_datetime.py 拆分而来。
 """
 
 from __future__ import annotations

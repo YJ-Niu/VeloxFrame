@@ -3,7 +3,7 @@ requires = ["maturin>=1.13,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "rsdata"
+name = "VeloxFrame"
 version = "1.0.1"
 description = "A DataFrame-like library built on Rust"
 readme = "README.md"
@@ -35,4 +35,4 @@ classifiers = [
 
 [tool.maturin]
 python-source = "python"
-module-name = "rsdata"
+module-name = "veloxframe"

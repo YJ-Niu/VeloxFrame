@@ -1,4 +1,4 @@
-"""rsdata: DataFrame-like library built on Rust.
+"""veloxframe: DataFrame-like library built on Rust.
 
 A drop-in DataFrame-like API where the heavy lifting is done in Rust.
 """
@@ -76,8 +76,8 @@ from .io import (
     to_xml,
 )
 from .lazyframe import LazyFrame, lazy, col, lit
-from .rsdata import _DataFrame, _Series  # 重新导出 Rust 类型，供内部使用
-from .rsdata import factorize as _factorize  # Rust 端 factorize
+from .veloxframe import _DataFrame, _Series  # 重新导出 Rust 类型，供内部使用
+from .veloxframe import factorize as _factorize  # Rust 端 factorize
 from .series import Series
 from typing import Any, Dict
 
@@ -158,7 +158,7 @@ def factorize(values):
     """对值进行编码，返回 (codes, categories)。
 
     Examples:
-        >>> import rsdata as rpd
+        >>> import veloxframe as rpd
         >>> codes, cats = rpd.factorize(['a', 'b', 'a', 'c', 'b'])
         >>> list(codes)
         [0, 1, 0, 2, 1]
@@ -1121,20 +1121,15 @@ def merge_wide_to_long(
             prefix = f"{stub}{sep}"
             for c in cols:
                 if c.startswith(prefix):
-                    sfx.add(c[len(prefix):])
+                    sfx.add(c[len(prefix) :])
         if not sfx:
             raise ValueError(f"no columns matching stubs {stubs!r}")
         suffix = sorted(sfx)
-        # 后缀字符串按 iaxis 列类型转换 (若该列为数值型)
-        iaxis_vals = data.get(str(iaxis))
-        if iaxis_vals and all(
-            isinstance(v, (int, float)) and not isinstance(v, bool) for v in iaxis_vals
-        ):
-            conv = int if all(isinstance(v, int) and not isinstance(v, bool) for v in iaxis_vals) else float
-            try:
-                suffix = [conv(s) for s in suffix]
-            except (TypeError, ValueError):
-                pass
+
+    # iaxis 列取原行值并按后缀重复 (pandas 语义)；非列时回退为行号
+    iaxis_data = data.get(str(iaxis))
+    if iaxis_data is None:
+        iaxis_data = list(range(n))
 
     out = {m: [] for m in mcols}
     out[iaxis] = []
@@ -1144,7 +1139,7 @@ def merge_wide_to_long(
         for s in suffix:
             for m in mcols:
                 out[m].append(data[m][i])
-            out[iaxis].append(s)
+            out[iaxis].append(iaxis_data[i])
             for stub in stubs:
                 col = f"{stub}{sep}{s}"
                 if col not in data:
@@ -1208,11 +1203,11 @@ def array(data, dtype=None, copy: bool = True):
 
 
 def test():
-    """运行 rsdata 内置测试（占位符）。"""
+    """运行 veloxframe 内置测试（占位符）。"""
     import warnings
 
     warnings.warn(
-        "rsdata.test() is a placeholder. Use pytest debug/ for tests.",
+        "veloxframe.test() is a placeholder. Use pytest debug/ for tests.",
         UserWarning,
         stacklevel=2,
     )
