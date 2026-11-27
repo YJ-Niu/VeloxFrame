@@ -704,6 +704,220 @@ class Index:
         return [pos.get(t, -1) for t in list(target)]
 
 
+    # ---------- pandas 对齐扩展方法 ----------
+
+    def argsort(self, ascending: bool = True, kind=None, na_position: str = "last") -> list:
+        """返回使 Index 有序的索引序列 (pandas argsort 语义)。
+
+        :param ascending: 升序 (默认 True)
+        :param kind: 排序算法 (兼容占位，未使用)
+        :param na_position: 缺失值位置 'first' / 'last' (默认 'last')
+        """
+        vals = self._data
+        non_na = [i for i in range(len(vals)) if vals[i] is not None]
+        na = [i for i in range(len(vals)) if vals[i] is None]
+        non_na.sort(key=lambda i: vals[i], reverse=not ascending)
+        return non_na + na if na_position == "last" else na + non_na
+
+    def get_indexer_for(self, target, method=None, limit=None) -> list:
+        """返回 target 各元素在本 Index 中的位置 (get_indexer 的别名)。"""
+        return self.get_indexer(target, method=method, limit=limit)
+
+    def isna(self) -> list:
+        """各元素是否为缺失值的 bool 列表。"""
+        return [v is None for v in self._data]
+
+    def notna(self) -> list:
+        """各元素是否非缺失值的 bool 列表。"""
+        return [v is not None for v in self._data]
+
+    def nunique(self, dropna: bool = True) -> int:
+        """唯一元素个数 (dropna=True 时排除缺失值)。"""
+        seen = set()
+        for v in self._data:
+            if v is None:
+                if not dropna:
+                    seen.add(None)
+                continue
+            seen.add(v)
+        return len(seen)
+
+    def repeat(self, repeats) -> "Index":
+        """各元素按指定次数重复 (pandas 语义)。"""
+        if isinstance(repeats, int):
+            reps = [repeats] * len(self._data)
+        else:
+            reps = list(repeats)
+            if len(reps) != len(self._data):
+                raise ValueError("repeats 长度必须与 Index 相同")
+        out = []
+        for v, r in zip(self._data, reps):
+            if r > 0:
+                out.extend([v] * r)
+        return Index(out, name=self.name)
+
+    def take(self, indices, allow_fill: bool = False, fill_value=None) -> "Index":
+        """按位置索引取元素 (支持负索引)。"""
+        n = len(self._data)
+        out = []
+        for i in indices:
+            if i is None and allow_fill:
+                out.append(fill_value)
+                continue
+            j = i + n if i < 0 else i
+            if allow_fill and (j < 0 or j >= n):
+                out.append(fill_value)
+            elif j < 0 or j >= n:
+                raise IndexError(f"index {i} out of bounds for size {n}")
+            else:
+                out.append(self._data[j])
+        return Index(out, name=self.name)
+
+    def join(
+        self,
+        other,
+        how: str = "left",
+        level=None,
+        return_indexers: bool = False,
+        sort: bool = False,
+        rsuffix: str = "_right",
+        lsuffix: str = "_left",
+        validate=None,
+    ):
+        """Index 连接 (pandas 语义: how='left'/'inner'/'right'/'outer')。"""
+        other_idx = other if isinstance(other, Index) else Index(other)
+        if len(set(self._data)) != len(self._data) or len(set(other_idx._data)) != len(
+            other_idx._data
+        ):
+            raise ValueError("cannot join with indexes that have duplicate labels")
+        if how == "inner":
+            oset = set(other_idx._data)
+            result = Index([v for v in self._data if v in oset], name=self.name)
+        elif how == "left":
+            result = self.copy()
+        elif how == "right":
+            result = other_idx.copy()
+        elif how == "outer":
+            sset = set(self._data)
+            result = Index(
+                list(self._data) + [v for v in other_idx._data if v not in sset],
+                name=self.name,
+            )
+        else:
+            raise ValueError(f"unsupported join how: {how}")
+        if not return_indexers:
+            return result
+        self_pos = {v: i for i, v in enumerate(self._data)}
+        other_pos = {v: i for i, v in enumerate(other_idx._data)}
+        left_indexer = [self_pos.get(v, -1) for v in result]
+        right_indexer = [other_pos.get(v, -1) for v in result]
+        return result, (left_indexer, right_indexer)
+
+    def value_counts(
+        self,
+        normalize: bool = False,
+        sort: bool = True,
+        ascending: bool = False,
+        bins=None,
+        dropna: bool = True,
+    ) -> "Series":
+        """元素出现次数统计 (pandas 语义，返回 Series)。"""
+        from ..series import Series
+
+        counts: dict = {}
+        for v in self._data:
+            if v is None and dropna:
+                continue
+            counts[v] = counts.get(v, 0) + 1
+        items = list(counts.items())
+        if sort:
+            items.sort(key=lambda kv: kv[1], reverse=not ascending)
+        vals = [c for _, c in items]
+        if normalize:
+            total = sum(vals)
+            vals = [v / total if total else None for v in vals]
+        return Series(vals, index=[k for k, _ in items], name="count")
+
+    @property
+    def is_numeric(self) -> bool:
+        """是否全部为数值 (int/float，不含 bool)。"""
+        vals = [v for v in self._data if v is not None]
+        return bool(vals) and all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) for v in vals
+        )
+
+    @property
+    def is_integer(self) -> bool:
+        """是否全部为 int (不含 bool)。"""
+        vals = [v for v in self._data if v is not None]
+        return bool(vals) and all(
+            isinstance(v, int) and not isinstance(v, bool) for v in vals
+        )
+
+    @property
+    def is_floating(self) -> bool:
+        """是否全部为 float。"""
+        vals = [v for v in self._data if v is not None]
+        return bool(vals) and all(isinstance(v, float) for v in vals)
+
+    @property
+    def is_object(self) -> bool:
+        """是否全部为 str。"""
+        vals = [v for v in self._data if v is not None]
+        return bool(vals) and all(isinstance(v, str) for v in vals)
+
+    @property
+    def is_boolean(self) -> bool:
+        """是否全部为 bool。"""
+        vals = [v for v in self._data if v is not None]
+        return bool(vals) and all(isinstance(v, bool) for v in vals)
+
+    @property
+    def is_categorical(self) -> bool:
+        """是否为 CategoricalIndex。"""
+        from .base import CategoricalIndex
+
+        return isinstance(self, CategoricalIndex)
+
+    @property
+    def str(self) -> "_IndexStringAccessor":
+        """字符串访问器：委托 Series 字符串方法，结果包装回 Index。"""
+        return _IndexStringAccessor(self)
+
+
+class _IndexStringAccessor:
+    """Index.str 访问器：动态委托 Series 的 StringAccessor，结果包装回 Index。"""
+
+    def __init__(self, index: "Index"):
+        from ..accessors.string import StringAccessor
+        from ..series import Series
+
+        self._index = index
+        self._sa = StringAccessor(Series(list(index._data), name=index.name))
+
+    def _wrap(self, result):
+        from ..series import Series
+
+        if isinstance(result, Series):
+            return Index(list(result.values), name=self._index.name)
+        return result
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        sa = self.__dict__.get("_sa")
+        if sa is None:
+            raise AttributeError(name)
+        attr = getattr(sa, name)
+        if not callable(attr):
+            return attr
+
+        def wrapper(*args, **kwargs):
+            return self._wrap(attr(*args, **kwargs))
+
+        return wrapper
+
+
 class RangeIndex(Index):
     """优化的范围索引，类似 RangeIndex。
 

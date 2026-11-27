@@ -395,6 +395,17 @@ impl Series {
         })
     }
 
+    // ---------- 重复 ----------
+
+    /// 各元素按指定次数重复 (pandas repeat 语义)。
+    /// 调用方需保证 repeats.len() 与列长一致。
+    pub fn repeat(&self, repeats: &[usize]) -> Series {
+        Series {
+            name: self.name.clone(),
+            data: self.data.repeat(repeats),
+        }
+    }
+
     // ---------- 偏移 ----------
 
     /// 按 ``periods`` 偏移数据：正数向下偏移（前面补 None），

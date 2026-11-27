@@ -107,10 +107,23 @@ class DataFrameGroupBy:
     def __getitem__(self, key):
         """按列名或列名列表选择分组后的列。"""
         if isinstance(key, str):
-            # 返回 SeriesGroupBy
+            # 返回 SeriesGroupBy：第一个参数必须是目标列的 Series，
+            # by 传各行的分组键值（单列为值列表，多列为 tuple 值列表）
             from ..series import SeriesGroupBy
 
-            return SeriesGroupBy(self._df, self._by, key)
+            n = self._df._nrows
+            if len(self._by) == 1:
+                by = list(self._df[self._by[0]].values)
+            else:
+                by_cols = [self._df[c].values for c in self._by]
+                by = [tuple(col[i] for col in by_cols) for i in range(n)]
+            return SeriesGroupBy(
+                self._df[key],
+                by,
+                as_index=self._as_index,
+                sort=self._sort,
+                dropna=self._dropna,
+            )
         elif isinstance(key, list):
             # 返回仅包含指定列的新 DataFrameGroupBy
             # 需要包含分组键列，因为它们需要用于分组
@@ -214,6 +227,91 @@ class DataFrameGroupBy:
                 else:
                     raise ValueError(f"unsupported agg: {func}")
         out = DataFrame(result)
+        if self._as_index and len(self._by) > 0:
+            if len(self._by) == 1:
+                out._index = [k[0] if isinstance(k, tuple) else k for k in group_keys]
+            else:
+                out._index = list(group_keys)
+        return out
+
+    def all(self) -> "DataFrame":
+        """分组逻辑与: 每个非分组列返回 bool DataFrame (空组为 True)。"""
+        return self._agg_bool("all")
+
+    def any(self) -> "DataFrame":
+        """分组逻辑或: 每个非分组列返回 bool DataFrame (空组为 False)。"""
+        return self._agg_bool("any")
+
+    def _agg_bool(self, how: str) -> "DataFrame":
+        """分组 all/any: 对每组各非分组列的非缺失值做 bool 聚合。"""
+        agg_cols = [c for c in self._df._columns if c not in self._by]
+        group_keys = list(self._groups.keys())
+        result: Dict[str, list] = {c: [] for c in agg_cols}
+        for key in group_keys:
+            idxs = self._groups[key]
+            for c in agg_cols:
+                col_vals = self._df[c].values
+                vals = [
+                    col_vals[i]
+                    for i in idxs
+                    if col_vals[i] is not None
+                    and not (isinstance(col_vals[i], float) and col_vals[i] != col_vals[i])
+                ]
+                if not vals:
+                    result[c].append(how == "all")
+                elif how == "all":
+                    result[c].append(all(bool(v) for v in vals))
+                else:
+                    result[c].append(any(bool(v) for v in vals))
+        out = DataFrame(result)
+        if self._as_index and len(self._by) > 0:
+            if len(self._by) == 1:
+                out._index = [k[0] if isinstance(k, tuple) else k for k in group_keys]
+            else:
+                out._index = list(group_keys)
+        return out
+
+    def boxplot(self, column=None, by=None, ax=None, subplots: bool = True, **kwargs):
+        """每组箱线图 (pandas 语义: subplots=True 时返回 {组键: axes})。"""
+        cols = [c for c in self._df._columns if c not in self._by]
+        if subplots:
+            result = {}
+            for key, idxs in self._groups.items():
+                k = key[0] if isinstance(key, tuple) and len(key) == 1 else key
+                sub = DataFrame({c: [self._df[c].values[i] for i in idxs] for c in cols})
+                result[k] = sub.boxplot(column=column, ax=ax, **kwargs)
+            return result
+        all_idxs = [i for idxs in self._groups.values() for i in idxs]
+        sub = DataFrame({c: [self._df[c].values[i] for i in all_idxs] for c in cols})
+        return sub.boxplot(column=column, ax=ax, **kwargs)
+
+    def ohlc(self) -> "DataFrame":
+        """每组 OHLC (pandas 2.1 语义): 每个非分组列计算 open/high/low/close。
+
+        列名扁平化为 ``{列名}_{open|high|low|close}`` (pandas MultiIndex 列形式的简化)。
+        """
+        cols = [c for c in self._df._columns if c not in self._by]
+        group_keys = list(self._groups.keys())
+        data: Dict[str, list] = {}
+        for c in cols:
+            col_vals = self._df[c].values
+            for level in ("open", "high", "low", "close"):
+                data[f"{c}_{level}"] = []
+                for key in group_keys:
+                    vals = [
+                        col_vals[i] for i in self._groups[key] if col_vals[i] is not None
+                    ]
+                    if not vals:
+                        data[f"{c}_{level}"].append(None)
+                    elif level == "open":
+                        data[f"{c}_{level}"].append(vals[0])
+                    elif level == "high":
+                        data[f"{c}_{level}"].append(max(vals))
+                    elif level == "low":
+                        data[f"{c}_{level}"].append(min(vals))
+                    else:
+                        data[f"{c}_{level}"].append(vals[-1])
+        out = DataFrame(data)
         if self._as_index and len(self._by) > 0:
             if len(self._by) == 1:
                 out._index = [k[0] if isinstance(k, tuple) else k for k in group_keys]

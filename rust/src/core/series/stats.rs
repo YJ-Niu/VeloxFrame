@@ -303,6 +303,76 @@ impl Series {
         Some(filtered.iter().map(|x| (x - m).abs()).sum::<f64>() / n as f64)
     }
 
+    // ---------- 成对统计 (corr / cov) ----------
+
+    /// 两个 Series 的成对统计（两遍法）：在双方均非缺失的位置上
+    /// （排除 NaN，与纯 Python 实现的配对语义一致），返回
+    /// ``(n, sum((x-mx)(y-my)), sum((x-mx)^2), sum((y-my)^2))``。
+    /// 长度不一致或无有效配对时返回 None。
+    pub fn pair_stats(&self, other: &Series) -> Option<(usize, f64, f64, f64)> {
+        let a = self.as_f64_vec();
+        let b = other.as_f64_vec();
+        if a.len() != b.len() || a.is_empty() {
+            return None;
+        }
+        let mut n = 0usize;
+        let mut sa = 0.0f64;
+        let mut sb = 0.0f64;
+        for (x, y) in a.iter().zip(b.iter()) {
+            let (Some(x), Some(y)) = (x, y) else {
+                continue;
+            };
+            if x.is_nan() || y.is_nan() {
+                continue;
+            }
+            n += 1;
+            sa += x;
+            sb += y;
+        }
+        if n == 0 {
+            return None;
+        }
+        let mx = sa / n as f64;
+        let my = sb / n as f64;
+        let mut cov = 0.0f64;
+        let mut var_a = 0.0f64;
+        let mut var_b = 0.0f64;
+        for (x, y) in a.iter().zip(b.iter()) {
+            let (Some(x), Some(y)) = (x, y) else {
+                continue;
+            };
+            if x.is_nan() || y.is_nan() {
+                continue;
+            }
+            let dx = x - mx;
+            let dy = y - my;
+            cov += dx * dy;
+            var_a += dx * dx;
+            var_b += dy * dy;
+        }
+        Some((n, cov, var_a, var_b))
+    }
+
+    /// 与 other 的样本协方差 (ddof 修正)：sum((x-mx)(y-my)) / (n - ddof)。
+    /// 非数值列或 n <= ddof 时返回 None。
+    pub fn cov(&self, other: &Series, ddof: usize) -> Option<f64> {
+        let (n, cov, _, _) = self.pair_stats(other)?;
+        if n <= ddof {
+            return None;
+        }
+        Some(cov / (n - ddof) as f64)
+    }
+
+    /// 与 other 的 Pearson 相关系数。
+    /// 非数值列或任一方差为 0 时返回 None。
+    pub fn corr(&self, other: &Series) -> Option<f64> {
+        let (_, cov, var_a, var_b) = self.pair_stats(other)?;
+        if var_a <= 0.0 || var_b <= 0.0 {
+            return None;
+        }
+        Some(cov / (var_a.sqrt() * var_b.sqrt()))
+    }
+
     // ---------- 自相关 ----------
 
     /// 计算 lag 阶自相关系数。

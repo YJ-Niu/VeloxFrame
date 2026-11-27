@@ -1548,6 +1548,12 @@ impl PySeries {
         result.map(|inner| PySeries { inner })
     }
 
+    /// 各元素按指定次数重复 (pandas repeat 语义)。repeats 长度需与列长一致。
+    fn repeat(&self, py: Python<'_>, repeats: Vec<usize>) -> Self {
+        let result = py.detach(|| self.inner.repeat(&repeats));
+        PySeries { inner: result }
+    }
+
     /// 三元条件选择：cond[i] 为 true 取 self[i]，否则取 other[i]。
     /// 仅同 dtype 同长度的 Int64/Float64/Bool/String 加速；其他返回 None。
     fn where_cond(&self, py: Python<'_>, cond: Vec<bool>, other: &Self) -> Option<Self> {
@@ -1629,6 +1635,16 @@ impl PySeries {
     }
 
     /// 样本峰度。bias=false 时无偏修正；fisher=false 时返回 Pearson 峰度。
+    /// 与 other 的样本协方差 (ddof 修正)；非数值列或观测不足返回 None。
+    fn cov(&self, py: Python<'_>, other: &Self, ddof: usize) -> Option<f64> {
+        py.detach(|| self.inner.cov(&other.inner, ddof))
+    }
+
+    /// 与 other 的 Pearson 相关系数；非数值列或零方差返回 None。
+    fn corr(&self, py: Python<'_>, other: &Self) -> Option<f64> {
+        py.detach(|| self.inner.corr(&other.inner))
+    }
+
     fn kurt<'py>(&self, py: Python<'py>, bias: bool, fisher: bool) -> PyResult<Bound<'py, PyAny>> {
         let result = py.detach(|| self.inner.kurt(bias, fisher).map(AggResult::Float));
         match result {

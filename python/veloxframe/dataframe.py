@@ -1126,6 +1126,10 @@ class DataFrame:
             fill_value=fill_value,
         )
 
+    def subtract(self, other, axis=0, level=None, fill_value=None) -> "DataFrame":
+        """减法操作 (sub 的别名)。"""
+        return self.sub(other, axis=axis, level=level, fill_value=fill_value)
+
     def sub(self, other, axis=0, level=None, fill_value=None) -> "DataFrame":
         """减法操作。
 
