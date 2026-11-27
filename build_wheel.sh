@@ -154,4 +154,42 @@ else
   echo "Warning: no .whl file found in $OUT_DIR; skip install." >&2
 fi
 
+# ========== 构建后测试 ==========
+# 构建+安装成功后运行 testing/ 目录下的测试：
+# - smoke_test.py：冒烟脚本
+# - test_*.py：pytest 用例（按文件逐个跑；testing_*.py 为手工对比脚本，
+#   命名不匹配 pytest 收集规则，不会被自动执行）
+echo "Running post-build tests ..."
+
+PYTEST_OK=0
+if "$PYTHON_ABS" -m pytest --version >/dev/null 2>&1; then
+  PYTEST_OK=1
+else
+  echo "  -> pytest not found in $PYTHON_ABS; attempting to install ..."
+  if command -v uv >/dev/null 2>&1; then
+    uv pip install --python "$PYTHON_ABS" pytest >/dev/null 2>&1 && PYTEST_OK=1 || PYTEST_OK=0
+  else
+    "$PYTHON_ABS" -m pip install pytest >/dev/null 2>&1 && PYTEST_OK=1 || PYTEST_OK=0
+  fi
+  if [[ "$PYTEST_OK" -ne 1 ]]; then
+    echo "Error: pytest is unavailable and auto-install failed. Install it manually and re-run." >&2
+    exit 1
+  fi
+fi
+
+echo "  -> smoke test: testing/smoke_test.py"
+if ! "$PYTHON_ABS" testing/smoke_test.py; then
+  echo "Error: post-build smoke test failed." >&2
+  exit 1
+fi
+
+for f in testing/test_*.py; do
+  echo "  -> pytest $f"
+  if ! "$PYTHON_ABS" -m pytest "$f" -q; then
+    echo "Error: post-build test failed: $f" >&2
+    exit 1
+  fi
+done
+
+echo "  -> all post-build tests passed."
 echo "Done."
