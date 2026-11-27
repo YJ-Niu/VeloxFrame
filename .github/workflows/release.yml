@@ -127,11 +127,17 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Setup Python for twine
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install twine
+        run: python -m pip install --upgrade twine
+
       - name: Publish
-        uses: PyO3/maturin-action@v1
         env:
           # 仓库 Settings → Secrets and variables → Actions 中的 secret 名（值为 PyPI token，以 pypi- 开头）。
-          MATURIN_PYPI_TOKEN: ${{ secrets.YJ_NIU }}
-        with:
-          command: upload
-          args: --non-interactive --skip-existing dist/*
+          # twine 从 TWINE_PASSWORD 读取 token，默认上传到官方 PyPI。
+          TWINE_PASSWORD: ${{ secrets.YJ_NIU }}
+        run: twine upload --non-interactive --skip-existing --verbose dist/*
