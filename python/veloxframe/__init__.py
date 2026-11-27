@@ -123,15 +123,12 @@ _defaults: Dict[str, Any] = dict(_options)
 
 
 def set_option(pat: str, value: Any) -> None:
-    """设置全局选项。
+    """设置全局选项 (允许创建新选项, 与 pandas 一致)。
 
     :param pat: 选项名 (如 'display.max_rows')
     :param value: 选项值
     """
-    if pat in _options:
-        _options[pat] = value
-    else:
-        raise ValueError(f"Unknown option: {pat!r}")
+    _options[pat] = value
 
 
 def get_option(pat: str) -> Any:
@@ -147,13 +144,17 @@ def get_option(pat: str) -> Any:
 def reset_option(pat: str) -> None:
     """重置选项为默认值。
 
-    :param pat: 选项名 (如 'display.max_rows')，或 'all' 重置全部
+    :param pat: 选项名 (如 'display.max_rows')，或 'all' 重置全部;
+        动态创建的选项 (无默认值) 直接移除
     """
-    if pat in _defaults:
-        _options[pat] = _defaults[pat]
-    elif pat == "all":
-        # 使用 dict.update 替代显式 for 循环
+    if pat == "all":
+        # 恢复默认并移除动态创建的选项
+        _options.clear()
         _options.update(_defaults)
+    elif pat in _defaults:
+        _options[pat] = _defaults[pat]
+    elif pat in _options:
+        del _options[pat]
     else:
         raise ValueError(f"Unknown option: {pat!r}")
 

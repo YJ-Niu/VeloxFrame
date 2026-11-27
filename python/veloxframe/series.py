@@ -5213,7 +5213,7 @@ class Series:
         text = "\n".join(lines)
         if buf is None:
             return text
-        if hasattr(buf, "__fspath__"):
+        if isinstance(buf, str) or hasattr(buf, "__fspath__"):
             with open(buf, "w", encoding="utf-8") as f:
                 f.write(text)
         else:
