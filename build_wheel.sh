@@ -183,6 +183,15 @@ if ! "$PYTHON_ABS" testing/smoke_test.py; then
   exit 1
 fi
 
+# 功能验证脚本（脚本式断言，逐文件独立进程；testing/perf/ 为长耗时性能脚本，不纳入默认构建验证）
+for f in testing/verify/verify_*.py; do
+  echo "  -> verify $f"
+  if ! "$PYTHON_ABS" "$f"; then
+    echo "Error: post-build verify failed: $f" >&2
+    exit 1
+  fi
+done
+
 for f in testing/test_*.py; do
   echo "  -> pytest $f"
   if ! "$PYTHON_ABS" -m pytest "$f" -q; then

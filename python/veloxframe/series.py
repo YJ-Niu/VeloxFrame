@@ -2109,7 +2109,11 @@ class Series:
         return Series(out, name=self.name, index=self._index, dtype="bool")
 
     def drop_duplicates(self, keep: str = "first", inplace: bool = False) -> _PySeries:
-        """删除重复值。"""
+        """删除重复值。
+
+        keep="first"/"last" 保留首次/末次出现；
+        keep=False 删除所有重复值，仅保留只出现一次的元素 (pandas 语义)。
+        """
         src_index = self._index if self._index else range(len(self))
         if keep == "last":
             # 反向遍历，保留最后一次出现
@@ -2120,6 +2124,12 @@ class Series:
                 if v not in seen and not seen.add(v)
             ]
             pairs = list(reversed(rev_pairs))
+        elif keep is False:
+            # 删除所有重复值，仅保留只出现一次的元素
+            counts: dict = {}
+            for v in self.values:
+                counts[v] = counts.get(v, 0) + 1
+            pairs = [(v, i) for v, i in zip(self.values, src_index) if counts[v] == 1]
         else:
             # 默认 keep="first"，保留首次出现
             seen = set()
@@ -2138,23 +2148,31 @@ class Series:
         return Series(out, name=self.name, index=new_index)
 
     def where(self, cond, other=None) -> _PySeries:
-        """三元: cond 为 True 保留 self, 否则取 other。"""
+        """三元: cond 为 True 保留 self, 否则取 other (other 支持标量或等长 Series)。"""
         if isinstance(cond, Series):
             cond = cond.values
-        out = [
-            (v if c else other) if v is not None and c else (other if not c else v)
-            for v, c in zip(self.values, cond)
-        ]
+        other_seq = other.values if isinstance(other, Series) else None
+        out = []
+        for i, (v, c) in enumerate(zip(self.values, cond)):
+            if v is not None and c:
+                out.append(v)
+            elif not c:
+                out.append(other_seq[i] if other_seq is not None else other)
+            else:
+                out.append(v)
         return Series(out, name=self.name, index=self._index)
 
     def mask(self, cond, other=None) -> _PySeries:
-        """where 的反义: cond 为 True 替换为 other, 否则保留 self。"""
+        """where 的反义: cond 为 True 替换为 other, 否则保留 self (other 支持标量或等长 Series)。"""
         if isinstance(cond, Series):
             cond = cond.values
-        out = [
-            (other if c else v) if v is not None or not c else other
-            for v, c in zip(self.values, cond)
-        ]
+        other_seq = other.values if isinstance(other, Series) else None
+        out = []
+        for i, (v, c) in enumerate(zip(self.values, cond)):
+            if c:
+                out.append(other_seq[i] if other_seq is not None else other)
+            else:
+                out.append(v)
         return Series(out, name=self.name, index=self._index)
 
     def astype(self, dtype, copy: bool = True, errors: str = "raise") -> _PySeries:
@@ -4059,7 +4077,11 @@ class Series:
         """
         values = self.values
         n = len(values)
-        if periods == 0 or abs(periods) >= n:
+        if periods == 0:
+            # periods=0: 与自身比较, (v - v) / v = 0.0 (pandas 语义, 无缺失位)
+            out = [None if v is None else 0.0 for v in values]
+            return Series(out, name=self.name, index=self._index)
+        if abs(periods) >= n:
             out = [None] * n
             return Series(out, name=self.name, index=self._index)
         if periods > 0:
