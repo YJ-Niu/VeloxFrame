@@ -241,6 +241,42 @@ class Resampler:
     def agg(self, func: str) -> _PySeries:
         return self._aggregate(func)
 
+    def ohlc(self) -> "DataFrame":
+        """OHLC 聚合: 每桶计算 open/high/low/close，返回四列 DataFrame。"""
+        from ..dataframe import DataFrame
+
+        buckets: dict = {}
+        bucket_order: list = []
+        for i, dt in enumerate(self._index):
+            key = self._bucket_key(dt)
+            if key not in buckets:
+                buckets[key] = []
+                bucket_order.append(key)
+            buckets[key].append(self._values[i])
+
+        def _ohlc(nums):
+            vals = [v for v in nums if v is not None]
+            if not vals:
+                return None
+            return (vals[0], max(vals), min(vals), vals[-1])
+
+        pairs = []
+        for k in bucket_order:
+            row = _ohlc(buckets[k])
+            if row is not None:
+                pairs.append((k, row[0], row[1], row[2], row[3]))
+        if not pairs:
+            raise ValueError("ohlc: 没有非空桶")
+        return DataFrame(
+            {
+                "open": [p[1] for p in pairs],
+                "high": [p[2] for p in pairs],
+                "low": [p[3] for p in pairs],
+                "close": [p[4] for p in pairs],
+            },
+            index=[p[0] for p in pairs],
+        )
+
 
 def __getattr__(name: str):
     """模块级延迟导入，避免与 dataframe.py / series.py 的循环导入。"""

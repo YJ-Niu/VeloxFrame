@@ -1447,6 +1447,23 @@ class Series:
         """大于等于: self >= other"""
         return self._compare(other, "ge", fill_value=fill_value)
 
+    def equals(self, other) -> bool:
+        """逐元素相等: 与 other 等长且各元素相等时返回 True (缺失值视为彼此相等)。"""
+        if isinstance(other, Series):
+            other = other.values
+        if not hasattr(other, "__len__") or len(other) != len(self):
+            return False
+        for a, b in zip(self.values, other):
+            a_na = a is None or (isinstance(a, float) and a != a)
+            b_na = b is None or (isinstance(b, float) and b != b)
+            if a_na or b_na:
+                if a_na != b_na:
+                    return False
+                continue
+            if a != b:
+                return False
+        return True
+
     # ---------- 合并方法 ----------
 
     def combine(self, other, func, fill_value=None) -> _PySeries:
@@ -1773,10 +1790,24 @@ class Series:
         from itertools import chain
 
         if isinstance(repeats, int):
+            reps = [repeats] * len(values)
+        else:
+            reps = [int(r) for r in repeats]
+            if len(reps) != len(values):
+                raise ValueError("repeats length must match series length")
+        # 优先 Rust 快速路径 (非负重复次数)
+        if all(r >= 0 for r in reps):
+            try:
+                r = self._inner.repeat(reps)
+                if r is not None:
+                    return Series(
+                        list(r.values), name=self.name, dtype=self._dtype_str
+                    )
+            except Exception:
+                pass
+        if isinstance(repeats, int):
             out = list(chain.from_iterable([v] * repeats for v in values))
         else:
-            if len(repeats) != len(values):
-                raise ValueError("repeats length must match series length")
             out = list(
                 chain.from_iterable([v] * rep for v, rep in zip(values, repeats))
             )
@@ -3182,6 +3213,23 @@ class Series:
     def pow(self, other, level=None, fill_value=None, axis: int = 0) -> _PySeries:
         """幂运算。"""
         return self._arith(other, "pow", fill_value=fill_value)
+
+    def multiply(self, other, level=None, fill_value=None, axis: int = 0) -> _PySeries:
+        """乘法运算 (mul 的别名)。"""
+        return self.mul(other, level=level, fill_value=fill_value, axis=axis)
+
+    def subtract(self, other, level=None, fill_value=None, axis: int = 0) -> _PySeries:
+        """减法运算 (sub 的别名)。"""
+        return self.sub(other, level=level, fill_value=fill_value, axis=axis)
+
+    def truediv(self, other, level=None, fill_value=None, axis: int = 0) -> _PySeries:
+        """真除法运算 (div 的别名)。"""
+        return self.div(other, level=level, fill_value=fill_value, axis=axis)
+
+    def ohlc(self, rule: str) -> "DataFrame":
+        """OHLC 聚合 (pandas 2.1 语义): 等价于 resample(rule).ohlc()，
+        返回 open/high/low/close 四列的 DataFrame。"""
+        return self.resample(rule).ohlc()
 
     def divmod(self, other, level=None, fill_value=None, axis: int = 0) -> tuple:
         """同时返回整除和取模的结果。"""
@@ -5113,6 +5161,65 @@ class Series:
             f.write(text)
         return None
 
+    def to_latex(
+        self,
+        buf=None,
+        columns=None,
+        header: bool = True,
+        index: bool = True,
+        index_label=None,
+        na_rep: str = "NaN",
+        float_format=None,
+        **kwargs,
+    ) -> Optional[str]:
+        """导出为 LaTeX tabular (对齐 主流库 to_latex 主要参数)。
+
+        :param buf: 输出目标: None=返回字符串; 路径(str/Path)=写文件; 其他=文件对象
+        :param columns: 列名 (Series 仅一个, 覆盖 name)
+        :param header: 是否输出表头行
+        :param index: 是否输出索引列
+        :param index_label: 索引列表头 (默认取 Series.name)
+        :param na_rep: 缺失值显示文本
+        :param float_format: 浮点格式化函数 (如 ``lambda x: f"{x:.2f}"``)
+        :return: buf=None 时返回字符串, 否则返回 None
+        """
+
+        def _cell(v):
+            if v is None or (isinstance(v, float) and v != v):
+                return na_rep
+            if float_format is not None and isinstance(v, float):
+                return float_format(v)
+            return str(v)
+
+        idx = self._index if self._index is not None else list(range(len(self)))
+        label = str(columns) if columns is not None else (
+            str(self.name) if self.name is not None else ""
+        )
+        tab_cols = ("l" if index else "") + "r"
+        lines = [r"\begin{tabular}{%s}" % tab_cols]
+        if header:
+            head = []
+            if index:
+                head.append(str(index_label) if index_label is not None else label)
+            head.append(label)
+            lines.append(" & ".join(head) + r" \\")
+        if index:
+            for i, v in enumerate(self.values):
+                lines.append(f"{idx[i]} & {_cell(v)} \\\\")
+        else:
+            for v in self.values:
+                lines.append(f"{_cell(v)} \\\\")
+        lines.append(r"\end{tabular}")
+        text = "\n".join(lines)
+        if buf is None:
+            return text
+        if isinstance(buf, str) or hasattr(buf, "__fspath__"):
+            with open(buf, "w", encoding="utf-8") as f:
+                f.write(text)
+        else:
+            buf.write(text)
+        return None
+
     def to_markdown(
         self,
         buf=None,
@@ -5711,6 +5818,20 @@ class Series:
             )
         if min_periods is None:
             min_periods = 1
+        # Pearson 快速路径: Rust 成对统计 (数值列)
+        if (
+            method == "pearson"
+            and min_periods == 1
+            and isinstance(other, Series)
+            and self._inner is not None
+            and other._inner is not None
+        ):
+            try:
+                r = self._inner.corr(other._inner)
+                if r is not None:
+                    return float(r)
+            except Exception:
+                pass
         pairs = [
             (a, b)
             for a, b in zip(self.values, other_vals)
@@ -5754,6 +5875,19 @@ class Series:
             raise ValueError("lengths must match")
         if min_periods is None:
             min_periods = 1
+        # 样本协方差快速路径: Rust 成对统计 (数值列)
+        if (
+            min_periods == 1
+            and isinstance(other, Series)
+            and self._inner is not None
+            and other._inner is not None
+        ):
+            try:
+                r = self._inner.cov(other._inner, ddof)
+                if r is not None:
+                    return float(r)
+            except Exception:
+                pass
         pairs = [
             (a, b)
             for a, b in zip(self.values, other_vals)

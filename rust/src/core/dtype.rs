@@ -160,6 +160,47 @@ impl ColumnData {
         }
     }
 
+    /// 各元素按指定次数重复 (pandas repeat 语义)。
+    /// 调用方需保证 repeats.len() 与列长一致。
+    pub fn repeat(&self, repeats: &[usize]) -> ColumnData {
+        match self {
+            ColumnData::Int(v) => ColumnData::Int(
+                v.iter()
+                    .zip(repeats.iter())
+                    .flat_map(|(x, &r)| std::iter::repeat_n(*x, r))
+                    .collect(),
+            ),
+            ColumnData::Float(v) => ColumnData::Float(
+                v.iter()
+                    .zip(repeats.iter())
+                    .flat_map(|(x, &r)| std::iter::repeat_n(*x, r))
+                    .collect(),
+            ),
+            ColumnData::Bool(v) => ColumnData::Bool(
+                v.iter()
+                    .zip(repeats.iter())
+                    .flat_map(|(x, &r)| std::iter::repeat_n(*x, r))
+                    .collect(),
+            ),
+            ColumnData::String(v) => ColumnData::String(
+                v.iter()
+                    .zip(repeats.iter())
+                    .flat_map(|(x, &r)| std::iter::repeat_n(x.clone(), r))
+                    .collect(),
+            ),
+            ColumnData::Categorical(c) => ColumnData::Categorical(CategoricalData {
+                categories: c.categories.clone(),
+                codes: c
+                    .codes
+                    .iter()
+                    .zip(repeats.iter())
+                    .flat_map(|(x, &r)| std::iter::repeat_n(*x, r))
+                    .collect(),
+                ordered: c.ordered,
+            }),
+        }
+    }
+
     /// 非缺失值数量
     pub fn count_non_null(&self) -> usize {
         match self {

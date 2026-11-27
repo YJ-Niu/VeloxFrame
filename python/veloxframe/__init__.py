@@ -29,7 +29,11 @@ from ._datetime import (
 )
 from .dataframe import DataFrame
 from .indexes import (
+    CategoricalIndex,
+    DatetimeIndex,
     IntervalIndex,
+    PeriodIndex,
+    TimedeltaIndex,
     crosstab,
     cut,
     get_dummies,
@@ -119,15 +123,12 @@ _defaults: Dict[str, Any] = dict(_options)
 
 
 def set_option(pat: str, value: Any) -> None:
-    """设置全局选项。
+    """设置全局选项 (允许创建新选项, 与 pandas 一致)。
 
     :param pat: 选项名 (如 'display.max_rows')
     :param value: 选项值
     """
-    if pat in _options:
-        _options[pat] = value
-    else:
-        raise ValueError(f"Unknown option: {pat!r}")
+    _options[pat] = value
 
 
 def get_option(pat: str) -> Any:
@@ -143,13 +144,17 @@ def get_option(pat: str) -> Any:
 def reset_option(pat: str) -> None:
     """重置选项为默认值。
 
-    :param pat: 选项名 (如 'display.max_rows')，或 'all' 重置全部
+    :param pat: 选项名 (如 'display.max_rows')，或 'all' 重置全部;
+        动态创建的选项 (无默认值) 直接移除
     """
-    if pat in _defaults:
-        _options[pat] = _defaults[pat]
-    elif pat == "all":
-        # 使用 dict.update 替代显式 for 循环
+    if pat == "all":
+        # 恢复默认并移除动态创建的选项
+        _options.clear()
         _options.update(_defaults)
+    elif pat in _defaults:
+        _options[pat] = _defaults[pat]
+    elif pat in _options:
+        del _options[pat]
     else:
         raise ValueError(f"Unknown option: {pat!r}")
 
@@ -512,6 +517,10 @@ __all__ = [
     "Index",
     "RangeIndex",
     "MultiIndex",
+    "DatetimeIndex",
+    "CategoricalIndex",
+    "PeriodIndex",
+    "TimedeltaIndex",
     "get_dummies",
     "cut",
     "qcut",
@@ -527,6 +536,7 @@ __all__ = [
     "merge_wide_to_long",
     "interval_range",
     "NamedAgg",
+    "named_agg",
     "IntervalIndex",
     "errors",
     "testing",
@@ -535,6 +545,7 @@ __all__ = [
     "pivot_table",
     "melt",
     "option_context",
+    "options",
     "wide_to_long",
     "lreshape",
     "isnull",
@@ -1146,6 +1157,91 @@ def merge_wide_to_long(
                     raise ValueError(f"missing column {col!r} for stub {stub!r}")
                 out[stub].append(data[col][i])
     return DataFrame(out)
+
+
+def named_agg(*args, **kwargs) -> dict:
+    """pandas named_agg: 将关键字参数转换为 NamedAgg 对象字典。
+
+    用法::
+
+        df.agg(veloxframe.named_agg(total=("amount", "sum"), peak=("amount", "max")))
+
+    :param args: 兼容占位 (pandas 同样忽略位置参数)
+    :param kwargs: 名称 → (column, aggfunc) 元组或 NamedAgg
+    """
+    out = {}
+    for name, spec in kwargs.items():
+        if isinstance(spec, tuple) and len(spec) == 2:
+            out[name] = NamedAgg(spec[0], spec[1])
+        elif isinstance(spec, NamedAgg):
+            out[name] = spec
+        else:
+            raise TypeError(
+                f"named_agg({name}=...) expects (column, aggfunc) or NamedAgg"
+            )
+    return out
+
+
+class _OptionsNamespace:
+    """pd.options 风格属性命名空间: 读写全局选项。
+
+    ``options.display.max_rows = 5`` 等价于 ``set_option("display.max_rows", 5)``;
+    读叶子返回选项值, 读中间节点返回子命名空间。
+    """
+
+    def __init__(self, root: str = ""):
+        object.__setattr__(self, "_root", root)
+
+    def _key(self, name: str) -> str:
+        root = object.__getattribute__(self, "_root")
+        return f"{root}.{name}" if root else name
+
+    def __getattr__(self, name):
+        key = self._key(name)
+        try:
+            return get_option(key)
+        except ValueError:
+            return _OptionsNamespace(key)
+
+    def __setattr__(self, name, value):
+        set_option(self._key(name), value)
+
+    def __repr__(self):
+        return f"<options {object.__getattribute__(self, '_root') or '(root)'}>"
+
+
+options = _OptionsNamespace()
+
+
+def show_versions(as_json: bool = False) -> None:
+    """打印 veloxframe 及依赖版本信息 (用于 issue 报告)。
+
+    :param as_json: 以 JSON 格式输出 (默认 False，按 键: 值 行输出)
+    """
+    import json
+    import platform
+    import sys
+
+    info = {
+        "python": sys.version.split()[0],
+        "executable": sys.executable,
+        "machine": platform.machine(),
+        "OS": platform.system(),
+        "OS-release": platform.release(),
+        "veloxframe": __version__,
+        "rsarray": None,
+    }
+    try:
+        import rsarray
+
+        info["rsarray"] = getattr(rsarray, "__version__", "unknown")
+    except ImportError:
+        pass
+    if as_json:
+        print(json.dumps(info, indent=2))
+    else:
+        for k, v in info.items():
+            print(f"{k}: {v}")
 
 
 def interval_range(

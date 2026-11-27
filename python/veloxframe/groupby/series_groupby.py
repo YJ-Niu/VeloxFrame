@@ -758,6 +758,61 @@ class SeriesGroupBy:
         values_list = [result[k] for k in keys]
         return Series(values_list, index=keys, name=self._s.name)
 
+    def all(self) -> Series:
+        """分组逻辑与: 组内所有值均为真时 True (空组为 True)。"""
+        return self._agg_bool("all")
+
+    def any(self) -> Series:
+        """分组逻辑或: 组内任一值为真时 True (空组为 False)。"""
+        return self._agg_bool("any")
+
+    def _agg_bool(self, how: str) -> Series:
+        """分组 all/any: 对组内非缺失值做 bool 聚合。"""
+        result = {}
+        for key, items in self._groups.items():
+            vals = [
+                v
+                for _, v in items
+                if v is not None and not (isinstance(v, float) and v != v)
+            ]
+            if not vals:
+                result[key] = how == "all"
+            elif how == "all":
+                result[key] = all(bool(v) for v in vals)
+            else:
+                result[key] = any(bool(v) for v in vals)
+        keys = list(result.keys())
+        if self._sort:
+            try:
+                keys.sort()
+            except TypeError:
+                pass
+        values_list = [result[k] for k in keys]
+        return Series(values_list, index=keys, name=self._s.name)
+
+    def ohlc(self) -> "DataFrame":
+        """每组 OHLC (pandas 2.1 语义): 返回 open/high/low/close 四列 DataFrame (index=组键)。"""
+        from ..dataframe import DataFrame
+
+        group_keys = list(self._groups.keys())
+        open_v, high_v, low_v, close_v = [], [], [], []
+        for key in group_keys:
+            vals = [v for _, v in self._groups[key] if v is not None]
+            if not vals:
+                open_v.append(None)
+                high_v.append(None)
+                low_v.append(None)
+                close_v.append(None)
+            else:
+                open_v.append(vals[0])
+                high_v.append(max(vals))
+                low_v.append(min(vals))
+                close_v.append(vals[-1])
+        return DataFrame(
+            {"open": open_v, "high": high_v, "low": low_v, "close": close_v},
+            index=group_keys,
+        )
+
     def sum(self) -> Series:
         """分组求和。"""
         return self._agg_single("sum")
